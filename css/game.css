@@ -1,0 +1,130 @@
+/* MLB Grand Slam 27 - in-game HUD (broadcast look) */
+#game .hud{position:absolute;inset:0;pointer-events:none;font-family:'Barlow Condensed',sans-serif;color:#fff;overflow:hidden}
+#game .hud *{box-sizing:border-box}
+#game .zone{position:absolute;inset:0;width:100%;height:100%}
+.hud-top{position:absolute;top:max(10px,env(safe-area-inset-top));left:10px;right:10px;display:flex;justify-content:space-between;align-items:flex-start;gap:8px}
+.hud-top button{pointer-events:auto;background:rgba(10,14,20,.78);border:1px solid #ffffff30;color:#fff;font:900 italic 15px 'Barlow Condensed';letter-spacing:.6px;padding:7px 12px;border-radius:3px}
+/* scorebug */
+.bug{display:flex;align-items:stretch;background:rgba(8,11,17,.9);border-radius:4px;overflow:hidden;box-shadow:0 4px 18px rgba(0,0,0,.4);height:52px}
+.bug .tm{display:flex;flex-direction:column}
+.bug .tr{display:flex;align-items:center;height:26px;min-width:86px}
+.bug .tr .ab{flex:1;padding:0 8px;font:900 italic 18px 'Barlow Condensed';letter-spacing:.5px;height:100%;display:flex;align-items:center;gap:6px}
+.bug .tr .ab i{display:inline-block;width:5px;height:16px;border-radius:1px}
+.bug .tr .sc{width:30px;text-align:center;font:900 20px 'Barlow Condensed';background:rgba(255,255,255,.08);height:100%;display:flex;align-items:center;justify-content:center}
+.bug .tr.bat .ab::after{content:'';width:0;height:0;border-left:6px solid #f2c14e;border-top:4px solid transparent;border-bottom:4px solid transparent;margin-left:2px}
+.bug .mid{display:flex;align-items:center;gap:10px;padding:0 10px;border-left:1px solid #ffffff18}
+.bug .inn{font:900 italic 17px 'Barlow Condensed';display:flex;flex-direction:column;align-items:center;line-height:.95}
+.bug .inn b{font-size:11px;color:#f2c14e}
+.bug .dia{width:36px;height:30px;position:relative}
+.bug .dia span{position:absolute;width:11px;height:11px;transform:rotate(45deg);border:1.5px solid #ffffffaa;background:transparent}
+.bug .dia span.on{background:#f2c14e;border-color:#f2c14e}
+.bug .dia .b1{right:2px;top:12px}.bug .dia .b2{left:12px;top:1px}.bug .dia .b3{left:2px;top:12px}
+.bug .cnt{display:flex;flex-direction:column;align-items:center;gap:2px}
+.bug .cnt .bs{font:900 18px 'Barlow Condensed';letter-spacing:1px}
+.bug .outs{display:flex;gap:3px}.bug .outs i{width:7px;height:7px;border-radius:50%;border:1.5px solid #ffffff99}.bug .outs i.on{background:#e5484d;border-color:#e5484d}
+.bug .pc{font:700 12px 'Barlow Condensed';color:#aab;padding:0 8px;display:flex;flex-direction:column;justify-content:center;border-left:1px solid #ffffff18;line-height:1.15}
+.pinfo{background:rgba(8,11,17,.85);border-radius:4px;padding:6px 12px;text-align:right;min-width:120px;opacity:0;transition:opacity .25s}
+.pinfo.on{opacity:1}
+.pinfo .mph{font:900 italic 30px 'Barlow Condensed';line-height:1}
+.pinfo .mph small{font-size:14px;color:#aab;margin-left:3px}
+.pinfo .ty{font:800 14px 'Barlow Condensed';letter-spacing:.6px;color:#f2c14e}
+.hud-right{display:flex;gap:8px;align-items:flex-start}
+/* lower third */
+.l3{position:absolute;left:12px;bottom:max(14px,env(safe-area-inset-bottom));display:flex;align-items:stretch;transform:translateX(-120%);transition:transform .35s cubic-bezier(.2,.8,.2,1);max-width:min(560px,70vw)}
+.l3.on{transform:none}
+.l3 .num{background:var(--tc,#c00);font:900 italic 34px 'Barlow Condensed';padding:4px 12px;display:flex;align-items:center;min-width:62px;justify-content:center}
+.l3 .bx{background:rgba(8,11,17,.92);padding:6px 14px}
+.l3 .nm{font:900 italic 26px 'Barlow Condensed';letter-spacing:.4px;line-height:1;text-transform:uppercase}
+.l3 .ln{font:700 15px 'Barlow Condensed';color:#c9ced8;letter-spacing:.4px;margin-top:2px}
+.l3 .ln b{color:#f2c14e}
+/* banners */
+.banner{position:absolute;left:50%;top:30%;transform:translate(-50%,-50%) skewX(-8deg) scale(.6);opacity:0;transition:all .25s cubic-bezier(.2,1.4,.4,1);text-align:center;white-space:nowrap}
+.banner.on{opacity:1;transform:translate(-50%,-50%) skewX(-8deg) scale(1)}
+.banner .big{font:900 italic clamp(40px,8vw,88px)/0.9 'Barlow Condensed';letter-spacing:1px;text-shadow:0 4px 0 rgba(0,0,0,.35);padding:6px 26px;background:linear-gradient(90deg,transparent,rgba(8,11,17,.85) 12%,rgba(8,11,17,.85) 88%,transparent)}
+.banner .big.gold{color:#f2c14e}.banner .big.red{color:#ff5a5f}
+.banner .sm{font:800 italic clamp(16px,2.6vw,24px) 'Barlow Condensed';letter-spacing:1px;margin-top:6px;color:#e6e9ef}
+.ticker{position:absolute;left:50%;bottom:max(14px,env(safe-area-inset-bottom));transform:translateX(-50%);background:rgba(8,11,17,.82);padding:5px 14px;border-radius:3px;font:700 16px 'Barlow Condensed';letter-spacing:.4px;opacity:0;transition:opacity .3s;white-space:nowrap;max-width:92vw;overflow:hidden;text-overflow:ellipsis}
+.ticker.on{opacity:1}
+/* buttons (touch) */
+.hud-btns{position:absolute;right:max(12px,env(safe-area-inset-right));bottom:max(16px,env(safe-area-inset-bottom));display:flex;flex-direction:column;align-items:flex-end;gap:10px;pointer-events:none}
+.hud-btns .row2{display:flex;gap:10px;align-items:flex-end}
+.hud-btn{pointer-events:auto;border:0;color:#fff;font:900 italic 17px 'Barlow Condensed';letter-spacing:.6px;border-radius:50%;width:74px;height:74px;display:flex;align-items:center;justify-content:center;flex-direction:column;background:rgba(18,24,34,.82);box-shadow:inset 0 0 0 2px #ffffff40,0 4px 14px rgba(0,0,0,.35);touch-action:none;user-select:none;-webkit-user-select:none}
+.hud-btn small{font:700 10px 'Barlow Condensed';opacity:.7;letter-spacing:.4px}
+.hud-btn.main{width:92px;height:92px;background:#f2c14e;color:#111;font-size:21px}
+.hud-btn.red{background:#d9363e}
+.hud-btn.blue{background:#2c74c9}
+.hud-btn.sm{width:58px;height:58px;font-size:14px}
+.hud-btn:active{transform:scale(.94)}
+.hud-btn.pressed{filter:brightness(1.35)}
+.diamondbtns{position:relative;width:200px;height:170px;pointer-events:none}
+.diamondbtns .hud-btn{position:absolute;width:66px;height:66px}
+.diamondbtns .d1{right:0;top:52px}.diamondbtns .d2{left:67px;top:0}.diamondbtns .d3{left:0;top:52px}.diamondbtns .d4{left:67px;top:104px;background:#d9363e}
+.keyhint{position:absolute;left:50%;bottom:max(14px,env(safe-area-inset-bottom));transform:translateX(-50%);display:flex;gap:14px;font:700 14px 'Barlow Condensed';letter-spacing:.5px;background:rgba(8,11,17,.7);padding:6px 14px;border-radius:4px;white-space:nowrap}
+.keyhint .k{display:inline-block;min-width:22px;text-align:center;background:#262f3d;border:1px solid #455066;border-bottom-width:3px;border-radius:4px;padding:0 6px;margin-right:5px;font-weight:800}
+.keyhint .k.pa{border-radius:50%;min-width:22px;padding:0;color:#111;border:0}
+.keyhint .k.pa.a{background:#3fbf6a}.keyhint .k.pa.b{background:#e5484d}.keyhint .k.pa.x{background:#4aa8ff}.keyhint .k.pa.y{background:#f2c14e}
+/* pitch picker */
+.pitches{position:absolute;left:12px;top:50%;transform:translateY(-50%);display:flex;flex-direction:column;gap:6px;pointer-events:auto}
+.pitches button{display:flex;align-items:center;gap:8px;background:rgba(8,11,17,.82);border:1px solid #ffffff22;border-left:4px solid transparent;color:#fff;padding:6px 12px 6px 8px;font:800 italic 16px 'Barlow Condensed';letter-spacing:.5px;border-radius:3px;min-width:150px;text-align:left}
+.pitches button.on{border-left-color:#f2c14e;background:rgba(30,38,52,.95)}
+.pitches button .k{font-style:normal;font-size:12px;background:#262f3d;border-radius:3px;padding:0 5px;color:#aab}
+.pitches button .v{margin-left:auto;color:#f2c14e}
+.meter{position:absolute;left:50%;bottom:120px;transform:translateX(-50%);width:min(440px,70vw);height:22px;background:rgba(8,11,17,.85);border-radius:12px;box-shadow:inset 0 0 0 2px #ffffff30;overflow:hidden;display:none}
+.meter.on{display:block}
+.meter .gold{position:absolute;top:0;bottom:0;background:#f2c14e}
+.meter .fill{position:absolute;left:0;top:0;bottom:0;background:linear-gradient(90deg,#3a7bd5,#7fb4ff);opacity:.6}
+.meter .cur{position:absolute;top:-4px;bottom:-4px;width:4px;background:#fff;box-shadow:0 0 8px #fff}
+.energy{font:700 12px 'Barlow Condensed';letter-spacing:.5px;color:#aab}
+.energy i{display:inline-block;height:6px;border-radius:3px;background:#3fbf6a;vertical-align:middle;margin-left:4px}
+/* cards (pregame / between innings / final) */
+.card{position:absolute;inset:0;display:flex;align-items:center;justify-content:center;pointer-events:auto;background:linear-gradient(0deg,rgba(5,8,12,.75),rgba(5,8,12,.2) 60%,rgba(5,8,12,0));opacity:0;transition:opacity .35s}
+.card.on{opacity:1}
+.card .in{max-width:min(980px,94vw);width:100%;padding:16px}
+.card-skip{position:absolute;right:16px;bottom:max(16px,env(safe-area-inset-bottom));font:800 italic 15px 'Barlow Condensed';letter-spacing:.6px;background:rgba(8,11,17,.8);border:1px solid #ffffff30;color:#fff;padding:7px 14px;border-radius:3px}
+.mu{display:grid;grid-template-columns:1fr auto 1fr;align-items:center;gap:18px}
+.mu .t{display:flex;flex-direction:column;align-items:center;gap:6px;text-align:center}
+.mu .t .nm{font:900 italic clamp(26px,4.5vw,46px)/.9 'Barlow Condensed';text-transform:uppercase;text-shadow:0 3px 0 rgba(0,0,0,.4)}
+.mu .t .rec{font:700 16px 'Barlow Condensed';color:#cfd5df}
+.mu .at{font:900 italic 36px 'Barlow Condensed';color:#f2c14e}
+.pg-title{text-align:center;margin-bottom:14px}
+.pg-title .k{display:inline-block;background:#d9363e;font:900 italic 15px 'Barlow Condensed';letter-spacing:1px;padding:2px 10px;transform:skewX(-10deg)}
+.pg-title .p{font:900 italic clamp(22px,3.6vw,38px) 'Barlow Condensed';letter-spacing:.6px;margin-top:6px;text-transform:uppercase}
+.pg-title .s{font:700 16px 'Barlow Condensed';color:#cfd5df;letter-spacing:.5px}
+.lus{display:grid;grid-template-columns:1fr 1fr;gap:12px}
+.lu{background:rgba(8,11,17,.88);border-radius:6px;overflow:hidden}
+.lu .hd{display:flex;align-items:center;gap:8px;padding:8px 10px;font:900 italic 20px 'Barlow Condensed';text-transform:uppercase}
+.lu table{width:100%;border-collapse:collapse;font:700 15px 'Barlow Condensed';letter-spacing:.3px}
+.lu td{padding:3px 8px;border-top:1px solid #ffffff10;white-space:nowrap}
+.lu td.n{text-align:right;color:#cfd5df}.lu td.o{width:18px;color:#f2c14e}.lu td.p{width:30px;color:#9aa3b2}
+.lu tr.sp td{background:#ffffff0c;color:#f2c14e}
+.ls{background:rgba(8,11,17,.9);border-radius:6px;overflow:auto;max-width:100%}
+.ls table{border-collapse:collapse;font:800 17px 'Barlow Condensed';width:100%}
+.ls th{font:800 13px 'Barlow Condensed';color:#9aa3b2;padding:5px 7px;text-align:center}
+.ls td{padding:5px 7px;text-align:center;border-top:1px solid #ffffff10}
+.ls td.t{text-align:left;font-style:italic;font-weight:900;white-space:nowrap}
+.ls td.r{color:#f2c14e;font-weight:900}
+.decs{display:flex;gap:10px;flex-wrap:wrap;justify-content:center;margin-top:10px;font:700 15px 'Barlow Condensed';letter-spacing:.4px}
+.decs span{background:rgba(8,11,17,.85);padding:5px 10px;border-radius:3px}
+.decs b{color:#f2c14e;margin-right:5px}
+.card .bt{display:flex;gap:10px;justify-content:center;margin-top:14px}
+.card .bt button{pointer-events:auto}
+/* pause */
+.pause-menu{position:absolute;inset:0;background:rgba(4,6,10,.78);display:flex;align-items:center;justify-content:center;pointer-events:auto;z-index:20}
+.pause-menu .in{background:#121821;border:1px solid #2a3342;border-top:3px solid #f2c14e;border-radius:6px;padding:16px;width:min(460px,92vw);max-height:88vh;overflow:auto}
+.pause-menu h2{margin-bottom:10px}
+.pause-menu .opt{display:block;width:100%;text-align:left;background:#1c2430;border:1px solid #2a3342;border-left:4px solid transparent;color:#fff;font:900 italic 20px 'Barlow Condensed';letter-spacing:.5px;padding:10px 14px;margin-bottom:6px;text-transform:uppercase}
+.pause-menu .opt:hover,.pause-menu .opt.focus{border-left-color:#f2c14e}
+.pause-menu .opt small{display:block;font:500 13px Barlow;text-transform:none;color:#9aa3b2;letter-spacing:0}
+.fade{position:absolute;inset:0;background:#000;opacity:0;transition:opacity .35s;pointer-events:none}
+.fade.on{opacity:1}
+.loading{position:absolute;inset:0;display:flex;align-items:center;justify-content:center;flex-direction:column;gap:10px;background:#06090e;font:900 italic 28px 'Barlow Condensed';letter-spacing:1px;z-index:30}
+.loading small{font:600 14px Barlow;color:#8792a3;font-style:normal;letter-spacing:0}
+@media (max-width:700px){
+  .bug{height:46px}.bug .tr{height:23px;min-width:70px}.bug .tr .ab{font-size:16px}.bug .tr .sc{font-size:18px;width:26px}
+  .bug .pc{display:none}.pinfo .mph{font-size:24px}
+  .l3 .nm{font-size:21px}.l3 .num{font-size:26px;min-width:48px}
+  .hud-btn{width:64px;height:64px;font-size:15px}.hud-btn.main{width:84px;height:84px}
+  .lus{grid-template-columns:1fr}.lu td{padding:2px 6px;font-size:14px}
+  .pitches button{min-width:118px;font-size:14px;padding:5px 8px}
+}
+@media (orientation:portrait) and (max-width:700px){ .lus .lu:nth-child(2) table{display:none} }

@@ -1,0 +1,10 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512">
+<rect width="512" height="512" rx="96" fill="#0b0f15"/>
+<circle cx="256" cy="256" r="196" fill="#f4f2ea"/>
+<path d="M120 120c60 50 80 130 60 272M392 120c-60 50-80 130-60 272" fill="none" stroke="#e5484d" stroke-width="10" stroke-dasharray="18 14"/>
+<g transform="skewX(-10) translate(46 0)">
+<text x="256" y="300" font-family="Arial Black,Arial,sans-serif" font-weight="900" font-size="190" text-anchor="middle" fill="#0b0f15">GS</text>
+</g>
+<rect x="150" y="330" width="212" height="74" rx="10" fill="#f2c14e" transform="skewX(-10) translate(58 0)"/>
+<text x="268" y="390" font-family="Arial Black,Arial,sans-serif" font-weight="900" font-size="66" text-anchor="middle" fill="#0b0f15">27</text>
+</svg>

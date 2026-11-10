@@ -1,0 +1,10 @@
+MLB Grand Slam 27 sound credits
+================================
+crowd_bed.mp3 and crowd_hype.mp3 are mixes of public domain (CC0 1.0) recordings (https://creativecommons.org/publicdomain/zero/1.0/),
+made for Bobble Bowl and reused here. Sources:
+  "Crowd yelling huuuuu (60k persons) during a soccer game in Brazil" by felix.blume, CC0 - https://freesound.org/people/felix.blume/sounds/612131/
+  "noise#01.aif" by huubjeroen, CC0 - https://freesound.org/people/huubjeroen/sounds/39733/
+  "CRWDReac-SOCCER_Millerntor Stadium Crowd Reaction General Ambience 01" by itmightgetloud, CC0 - https://freesound.org/people/itmightgetloud/sounds/829454/
+  "Milan Derby (Milan vs Inter) at San Siro Stadium" by neilraouf, CC0 - https://freesound.org/people/neilraouf/sounds/424354/
+  "19 Football Crowd - Reaction To Goal.flac" by D.jones, CC0 - https://freesound.org/people/D.jones/sounds/528799/
+Bat, glove, mitt and organ sounds are synthesized in code (js/game/audio.js). The organ phrases are original.
