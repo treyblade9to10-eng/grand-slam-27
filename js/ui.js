@@ -1,4 +1,5 @@
 // MLB Grand Slam 27 - small UI helpers shared by every screen
+import { logoImg, loadLogo, onLogo, realLogos, drawFit } from './logos.js';
 export const $ = (s, r = document) => r.querySelector(s);
 export const $$ = (s, r = document) => [...r.querySelectorAll(s)];
 export function esc(s) { return String(s ?? '').replace(/[&<>"]/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c])); }
@@ -28,17 +29,33 @@ export const fmtERA = v => (v == null || !isFinite(v)) ? '-.--' : v.toFixed(2);
 export const ipStr = outs => Math.floor(outs / 3) + '.' + (outs % 3);
 export function ord(n) { const s = ['th', 'st', 'nd', 'rd'], v = n % 100; return n + (s[(v - 20) % 10] || s[v] || s[0]); }
 
-// Original team badge (NOT the real club logo - those are trademarked). Circle cap-badge in club colors.
+// Team badge: the real club logo (runtime from MLB's CDN, see logos.js) or our own circle badge as fallback / "classic" setting.
 const badgeCache = new Map();
+const pendingBadges = new Map(); // team id -> [WeakRef<canvas>]
 export function lum(hex) { const n = parseInt(hex.slice(1), 16); return (0.299 * (n >> 16) + 0.587 * (n >> 8 & 255) + 0.114 * (n & 255)) / 255; }
+function paintBadge(cv, team) {
+  const x = cv.getContext('2d'), S = cv.width, img = logoImg(team, 'primaryDark');
+  x.clearRect(0, 0, S, S);
+  if (img) { drawFit(x, img, S / 2, S / 2, S * 0.92, S * 0.92); return true; }
+  drawBadge(x, team, S / 2, S / 2, S / 2 - 4); return false;
+}
+onLogo((team, kind) => {
+  if (kind !== 'primaryDark') return;
+  for (const [k, cv] of badgeCache) if (k.startsWith(team.id + '|')) paintBadge(cv, team);
+  const list = pendingBadges.get(team.id) || []; pendingBadges.delete(team.id);
+  for (const r of list) { const cv = r.deref(); if (cv) paintBadge(cv, team); }
+});
 export function badgeCanvas(team, size = 64) {
-  const k = team.id + size;
-  if (badgeCache.has(k)) { const c = badgeCache.get(k); const n = document.createElement('canvas'); n.width = c.width; n.height = c.height; n.getContext('2d').drawImage(c, 0, 0); n.style.width = n.style.height = size + 'px'; n.className = 'badge'; return n; }
   const dpr = 2, S = size * dpr, cv = document.createElement('canvas'); cv.width = cv.height = S;
-  drawBadge(cv.getContext('2d'), team, S / 2, S / 2, S / 2 - 2 * dpr);
-  badgeCache.set(k, cv);
-  cv.style.width = cv.style.height = size + 'px'; cv.className = 'badge';
-  return badgeCanvas(team, size);
+  const ok = paintBadge(cv, team);
+  if (!ok && realLogos()) { loadLogo(team, 'primaryDark'); if (typeof WeakRef !== 'undefined') { const l = pendingBadges.get(team.id) || []; l.push(new WeakRef(cv)); pendingBadges.set(team.id, l); } }
+  cv.style.width = cv.style.height = size + 'px'; cv.className = 'badge'; cv.dataset.b = team.id;
+  return cv;
+}
+// canvas with the badge drawn, cached (for textures / overlays that only read it)
+export function badgeSource(team, S = 256) {
+  const k = team.id + '|' + S; if (badgeCache.has(k)) return badgeCache.get(k);
+  const cv = document.createElement('canvas'); cv.width = cv.height = S; paintBadge(cv, team); badgeCache.set(k, cv); return cv;
 }
 export function teamMark(team) { const m = { AZ: 'A', ATH: 'A', ATL: 'A', BAL: 'O', BOS: 'B', CHC: 'C', CWS: 'SOX', CIN: 'C', CLE: 'C', COL: 'CR', DET: 'D', HOU: 'H', KC: 'KC', LAA: 'A', LAD: 'LA', MIA: 'M', MIL: 'M', MIN: 'TC', NYM: 'NY', NYY: 'NY', PHI: 'P', PIT: 'P', SD: 'SD', SF: 'SF', SEA: 'S', STL: 'STL', TB: 'TB', TEX: 'T', TOR: 'T', WSH: 'W' }; return m[team.id] || team.id; }
 export function drawBadge(x, team, cx, cy, r) {

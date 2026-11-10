@@ -4,25 +4,39 @@
 #game .zone{position:absolute;inset:0;width:100%;height:100%}
 .hud-top{position:absolute;top:max(10px,env(safe-area-inset-top));left:10px;right:10px;display:flex;justify-content:space-between;align-items:flex-start;gap:8px}
 .hud-top button{pointer-events:auto;background:rgba(10,14,20,.78);border:1px solid #ffffff30;color:#fff;font:900 italic 15px 'Barlow Condensed';letter-spacing:.6px;padding:7px 12px;border-radius:3px}
-/* scorebug */
-.bug{display:flex;align-items:stretch;background:rgba(8,11,17,.9);border-radius:4px;overflow:hidden;box-shadow:0 4px 18px rgba(0,0,0,.4);height:52px}
+/* scorebug - broadcast style */
+.bug{display:flex;flex-direction:column;filter:drop-shadow(0 6px 16px rgba(0,0,0,.45));font-family:'Barlow Condensed'}
+.bug .main{display:flex;align-items:stretch;height:64px;background:linear-gradient(180deg,#151b26,#0b0f16);border-radius:6px 6px 0 6px;overflow:hidden;box-shadow:inset 0 0 0 1px #ffffff14}
 .bug .tm{display:flex;flex-direction:column}
-.bug .tr{display:flex;align-items:center;height:26px;min-width:86px}
-.bug .tr .ab{flex:1;padding:0 8px;font:900 italic 18px 'Barlow Condensed';letter-spacing:.5px;height:100%;display:flex;align-items:center;gap:6px}
-.bug .tr .ab i{display:inline-block;width:5px;height:16px;border-radius:1px}
-.bug .tr .sc{width:30px;text-align:center;font:900 20px 'Barlow Condensed';background:rgba(255,255,255,.08);height:100%;display:flex;align-items:center;justify-content:center}
-.bug .tr.bat .ab::after{content:'';width:0;height:0;border-left:6px solid #f2c14e;border-top:4px solid transparent;border-bottom:4px solid transparent;margin-left:2px}
-.bug .mid{display:flex;align-items:center;gap:10px;padding:0 10px;border-left:1px solid #ffffff18}
-.bug .inn{font:900 italic 17px 'Barlow Condensed';display:flex;flex-direction:column;align-items:center;line-height:.95}
-.bug .inn b{font-size:11px;color:#f2c14e}
-.bug .dia{width:36px;height:30px;position:relative}
-.bug .dia span{position:absolute;width:11px;height:11px;transform:rotate(45deg);border:1.5px solid #ffffffaa;background:transparent}
-.bug .dia span.on{background:#f2c14e;border-color:#f2c14e}
-.bug .dia .b1{right:2px;top:12px}.bug .dia .b2{left:12px;top:1px}.bug .dia .b3{left:2px;top:12px}
-.bug .cnt{display:flex;flex-direction:column;align-items:center;gap:2px}
-.bug .cnt .bs{font:900 18px 'Barlow Condensed';letter-spacing:1px}
-.bug .outs{display:flex;gap:3px}.bug .outs i{width:7px;height:7px;border-radius:50%;border:1.5px solid #ffffff99}.bug .outs i.on{background:#e5484d;border-color:#e5484d}
-.bug .pc{font:700 12px 'Barlow Condensed';color:#aab;padding:0 8px;display:flex;flex-direction:column;justify-content:center;border-left:1px solid #ffffff18;line-height:1.15}
+.bug .tr{position:relative;display:flex;align-items:center;height:32px;min-width:118px;background:linear-gradient(90deg,var(--c1) 0%,color-mix(in srgb,var(--c1) 70%,#000) 100%)}
+.bug .tr+.tr{border-top:1px solid #0006}
+.bug .tr::before{content:'';position:absolute;left:0;top:0;bottom:0;width:4px;background:transparent;transition:background .2s}
+.bug .tr.bat::before{background:#f2c14e}
+.bug .tr .lg{width:36px;height:32px;display:flex;align-items:center;justify-content:center;background:#00000038;padding:0 4px 0 6px}
+.bug .tr .lg canvas{width:24px!important;height:24px!important;display:block}
+.bug .tr .ab{flex:1;padding:0 8px 0 6px;font:900 italic 21px 'Barlow Condensed';letter-spacing:.8px;color:#fff;text-shadow:0 1px 2px #0008}
+.bug .tr .sc{width:38px;height:100%;display:flex;align-items:center;justify-content:center;font:900 26px 'Barlow Condensed';background:#0b0f16;color:#fff;font-variant-numeric:tabular-nums}
+.bug .tr.flash .sc{animation:bugflash 1.6s ease-out}
+@keyframes bugflash{0%,40%{background:#f2c14e;color:#111}100%{background:#0b0f16;color:#fff}}
+.bug .mid{display:flex;align-items:center;gap:12px;padding:0 12px 0 10px}
+.bug .inn{display:flex;flex-direction:column;align-items:center;gap:3px;min-width:22px}
+.bug .inn .n{font:900 24px/1 'Barlow Condensed';color:#fff}
+.bug .inn .arr{width:0;height:0;border-left:6px solid transparent;border-right:6px solid transparent}
+.bug .inn .arr.up{border-bottom:7px solid #f2c14e}
+.bug .inn .arr.down{border-top:7px solid #f2c14e;order:2}
+.bug .dia{width:44px;height:38px;position:relative}
+.bug .dia span{position:absolute;width:14px;height:14px;transform:rotate(45deg);border:2px solid #ffffff70;background:#ffffff10;transition:background .2s,border-color .2s}
+.bug .dia span.on{background:#f2c14e;border-color:#f2c14e;box-shadow:0 0 8px #f2c14e88}
+.bug .dia .b1{right:3px;top:17px}.bug .dia .b2{left:15px;top:3px}.bug .dia .b3{left:3px;top:17px}
+.bug .cnt{display:flex;flex-direction:column;align-items:center;gap:5px;min-width:40px}
+.bug .cnt .bs{font:900 25px/1 'Barlow Condensed';letter-spacing:.5px;color:#fff;font-variant-numeric:tabular-nums}
+.bug .cnt .bs em{font-style:normal;color:#ffffff70;margin:0 1px}
+.bug .outs{display:flex;gap:4px}.bug .outs i{width:9px;height:9px;border-radius:50%;border:2px solid #ffffff70}.bug .outs i.on{background:#e5484d;border-color:#e5484d}
+.bug .strip{align-self:flex-start;display:flex;gap:12px;background:#0b0f16e8;border-radius:0 0 5px 5px;padding:3px 10px 4px;font:700 13px 'Barlow Condensed';letter-spacing:.6px;color:#c9ced8;box-shadow:inset 0 0 0 1px #ffffff10}
+.bug .strip b{color:#f2c14e;font-weight:800;margin-right:2px}
+.bug.derby{flex-direction:row;background:rgba(8,11,17,.9);border-radius:4px;height:52px}
+.bug.derby .mid{gap:14px}.bug.derby .inn{font:900 italic 20px 'Barlow Condensed'}.bug.derby .inn b{font-size:11px;color:#f2c14e}
+@media (max-width:700px){.bug .main{height:54px}.bug .tr{height:27px;min-width:92px}.bug .tr .lg{width:28px;height:27px}.bug .tr .lg canvas{width:20px!important;height:20px!important}.bug .tr .ab{font-size:17px}.bug .tr .sc{width:30px;font-size:21px}.bug .mid{gap:8px;padding:0 8px}.bug .dia{transform:scale(.85)}.bug .cnt .bs{font-size:21px}.bug .inn .n{font-size:20px}.bug .strip{font-size:11px}}
 .pinfo{background:rgba(8,11,17,.85);border-radius:4px;padding:6px 12px;text-align:right;min-width:120px;opacity:0;transition:opacity .25s}
 .pinfo.on{opacity:1}
 .pinfo .mph{font:900 italic 30px 'Barlow Condensed';line-height:1}
@@ -120,11 +134,18 @@
 .loading{position:absolute;inset:0;display:flex;align-items:center;justify-content:center;flex-direction:column;gap:10px;background:#06090e;font:900 italic 28px 'Barlow Condensed';letter-spacing:1px;z-index:30}
 .loading small{font:600 14px Barlow;color:#8792a3;font-style:normal;letter-spacing:0}
 @media (max-width:700px){
-  .bug{height:46px}.bug .tr{height:23px;min-width:70px}.bug .tr .ab{font-size:16px}.bug .tr .sc{font-size:18px;width:26px}
-  .bug .pc{display:none}.pinfo .mph{font-size:24px}
+  .pinfo .mph{font-size:24px}
   .l3 .nm{font-size:21px}.l3 .num{font-size:26px;min-width:48px}
   .hud-btn{width:64px;height:64px;font-size:15px}.hud-btn.main{width:84px;height:84px}
   .lus{grid-template-columns:1fr}.lu td{padding:2px 6px;font-size:14px}
   .pitches button{min-width:118px;font-size:14px;padding:5px 8px}
 }
 @media (orientation:portrait) and (max-width:700px){ .lus .lu:nth-child(2) table{display:none} }
+
+/* instant replay */
+.rptag{position:absolute;right:max(14px,env(safe-area-inset-right));top:max(60px,calc(env(safe-area-inset-top) + 50px));display:flex;align-items:center;gap:8px;background:#0b0f16e8;padding:6px 14px 6px 10px;font:900 italic 20px 'Barlow Condensed';letter-spacing:1.5px;opacity:0;transform:translateX(30px);transition:all .3s;clip-path:polygon(8px 0,100% 0,calc(100% - 8px) 100%,0 100%)}
+.rptag i{width:10px;height:10px;border-radius:50%;background:#e5484d;animation:rpblink 1s infinite}
+.rptag.on{opacity:1;transform:none}
+@keyframes rpblink{50%{opacity:.25}}
+.hud.replaying .l3,.hud.replaying .ticker,.hud.replaying .hud-btns,.hud.replaying .keyhint,.hud.replaying .pinfo{opacity:0!important}
+.hud.replaying::after{content:'';position:absolute;inset:0;box-shadow:inset 0 0 120px rgba(0,0,0,.45);pointer-events:none}

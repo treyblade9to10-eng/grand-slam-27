@@ -13,7 +13,10 @@ export const Settings = Object.assign({
   innings: 9,
   camera: 'broadcast',  // broadcast | low
   strikeZone: true,
-}, JSON.parse(localStorage.getItem(PRE + 'settings') || '{}'));
+  logos: 'real',        // real (MLB logos from MLB's CDN at runtime) | classic (our own badges)
+  camFollow: true,
+  replays: true,        // instant replays of homers and diving catches      // camera chases the ball after contact
+}, (() => { try { return JSON.parse(localStorage.getItem(PRE + 'settings') || '{}'); } catch (e) { return {}; } })());
 export function saveSettings() { localStorage.setItem(PRE + 'settings', JSON.stringify(Settings)); }
 export function save(key, obj) {
   try { localStorage.setItem(PRE + key, 'z' + LZ().compressToUTF16(JSON.stringify(obj))); return true; }

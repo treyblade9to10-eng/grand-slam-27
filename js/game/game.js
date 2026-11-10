@@ -3,6 +3,7 @@ import * as THREE from '../lib/three.min.js';
 import { makeStage } from './scene.js';
 import { makeAthlete, animate, uniform, SKINMAP, PITCH_RELEASE, THROW_RELEASE } from './model.js';
 import { Engine, SWING_TIME } from './engine.js';
+import { Recorder, makeReplay } from './replay.js';
 import { HUD } from './hud.js';
 import { Input } from './input.js';
 import { Sound } from './audio.js';
@@ -53,12 +54,12 @@ class LiveGame {
     this.hud = new HUD(root, this);
     this.input = new Input(root);
     // ball
-    this.ballM = new THREE.Mesh(new THREE.SphereGeometry(0.2, 14, 10), new THREE.MeshStandardMaterial({ color: '#ffffff', emissive: '#555555', roughness: 0.4 }));
+    this.ballM = new THREE.Mesh(new THREE.SphereGeometry(0.2, 14, 10), new THREE.MeshStandardMaterial({ color: '#ffffff', emissive: '#9a9a9a', roughness: 0.4 }));
     this.ballM.castShadow = true; this.scene.add(this.ballM);
     this.ballShadow = new THREE.Mesh(new THREE.CircleGeometry(0.35, 12).rotateX(-Math.PI / 2), new THREE.MeshBasicMaterial({ color: '#000', transparent: true, opacity: 0.35, depthWrite: false }));
     this.scene.add(this.ballShadow);
     const trailG = new THREE.BufferGeometry(); trailG.setAttribute('position', new THREE.BufferAttribute(new Float32Array(30 * 3), 3));
-    this.trail = new THREE.Line(trailG, new THREE.LineBasicMaterial({ color: '#ffffff', transparent: true, opacity: 0.5 })); this.trail.frustumCulled = false; this.scene.add(this.trail); this.trailPts = [];
+    this.trail = new THREE.Line(trailG, new THREE.LineBasicMaterial({ color: '#ffffff', transparent: true, opacity: 0.75 })); this.trail.frustumCulled = false; this.scene.add(this.trail); this.trailPts = [];
     // umpire
     this.ump = makeAthlete({ id: 'ump', num: '', last: '', look: { skin: 1, hair: 'short', hairC: 1, beard: 0, build: 1.12, h: 1.0, sleeve: 0, gloves: 0 } }, null, { uni: uniform(homeT, 'ump'), head: 'catcher', mask: true });
     this.ump.root.position.set(0, 0, 6.6); this.ump.root.rotation.y = Math.PI; this.scene.add(this.ump.root);
@@ -66,6 +67,7 @@ class LiveGame {
     this.blobG = new THREE.CircleGeometry(1.4, 16).rotateX(-Math.PI / 2); this.blobM = new THREE.MeshBasicMaterial({ color: '#000', transparent: true, opacity: this.stage.level === 'fast' ? 0.3 : 0.12, depthWrite: false });
     // fireworks
     this.fw = [];
+    this.rec = new Recorder(this); this.replay = null; this.replayWant = null;
     ld.remove();
     Sound.start();
     this.loop = this.loop.bind(this); this.last = performance.now(); this.acc = 0; this.running = true;
@@ -163,14 +165,15 @@ class LiveGame {
         const f = E.ball.holder, a = this.actors.get(f.pid + '|' + (f.n === 2 ? 'catcher' : 'field') + '|' + E.fieldingSide);
         if (a) { const v = new THREE.Vector3(); (a.glove || a.handL).getWorldPosition(v); p = v; }
       }
-      if (!p) p = new THREE.Vector3(E.ball.p.x, E.ball.p.y, E.ball.p.z);
+      if (!p) p = this.hrBall ? new THREE.Vector3(this.hrBall.p.x, this.hrBall.p.y, this.hrBall.p.z) : new THREE.Vector3(E.ball.p.x, E.ball.p.y, E.ball.p.z);
     }
     if (!p) { this.ballM.visible = false; this.ballShadow.visible = false; this.trail.visible = false; return; }
     this.ballM.visible = true; this.ballM.position.copy(p);
+    { const d = this.cam.position.distanceTo(p), px = d * Math.tan(this.cam.fov * Math.PI / 360) * 2 / (this.hud.H || 700); this.ballM.scale.setScalar(Math.max(1, px * 5 / 0.4)); }
     this.ballShadow.visible = p.y > 0.3; this.ballShadow.position.set(p.x, 0.07, p.z);
     // trail while the ball is flying
-    const flying = E.phase === 'pitch' || (E.ball && (E.ball.state === 'air' || E.ball.state === 'thrown'));
-    if (flying) { if (this.trailPts.length && this.trailPts[0].distanceTo(p) > 25) this.trailPts.length = 0; this.trailPts.unshift(p.clone()); if (this.trailPts.length > 10) this.trailPts.pop(); } else this.trailPts.length = 0;
+    const flying = E.phase === 'pitch' || (this.hrBall && !this.hrBall.done) || (E.ball && (E.ball.state === 'air' || E.ball.state === 'thrown'));
+    if (flying) { if (this.trailPts.length && this.trailPts[0].distanceTo(p) > 25) this.trailPts.length = 0; this.trailPts.unshift(p.clone()); if (this.trailPts.length > (this.camMode === 'play' ? 26 : 10)) this.trailPts.pop(); } else this.trailPts.length = 0;
     const arr = this.trail.geometry.attributes.position;
     for (let i = 0; i < 30; i++) { const q = this.trailPts[Math.min(i, this.trailPts.length - 1)] || p; arr.setXYZ(i, q.x, q.y, q.z); }
     arr.needsUpdate = true; this.trail.geometry.setDrawRange(0, Math.min(30, this.trailPts.length)); this.trail.visible = this.trailPts.length > 1;
@@ -204,20 +207,105 @@ class LiveGame {
     else if (ph === 'live' || ph === 'dead') want = 'play';
     else want = this.camMode;
     if (want !== this.camMode) { this.camMode = want; this.camCut = true; }
-    if (want === 'play') {
-      const b = E.ball && E.ball.p ? E.ball.p : { x: 0, y: 0, z: -60 };
-      let tx = b.x, tz = b.z, ty = Math.min(b.y, 60) * 0.5;
-      if (E.trot) { const br = E.runners.find(r => r.isBatter); if (br && E.pt > 2.6) { tx = br.p.x; tz = br.p.z; ty = 3; } }
-      const d = Math.hypot(tx, tz);
-      const pos = new THREE.Vector3(tx * 0.3, 42 + d * 0.16 + (this.portrait() ? 30 : 0), 78 + (this.portrait() ? 40 : 0) - Math.min(0, tz) * 0.12);
-      const look = new THREE.Vector3(tx * 0.85, ty, tz * 0.85 - 10);
-      this.setCam(pos, look, this.portrait() ? 58 : 42, this.camCut ? 1 : 1 - Math.exp(-dt * 3));
-      this.camCut = false;
-      return;
-    }
+    if (want === 'play') { this.chaseCam(dt); this.camCut = false; return; }
+    this.chase = null;
     const r = this.camRig(want); if (!r) return;
     this.setCam(r[0], r[1], r[2], this.camCut ? 1 : k);
     this.camCut = false;
+  }
+  // ---------- ball cam: follow the ball after contact (broadcast style) ----------
+  chaseCam(dt) {
+    const E = this.E, P = this.portrait(), V = THREE.Vector3;
+    const cam = this.cam;
+    if (!this.chase || this.camCut) this.chase = { t: 0, pos: cam.position.clone(), look: (this.camLook || new V(0, 3, -40)).clone(), fov: cam.fov, mode: '' };
+    const C = this.chase; C.t += dt;
+    const vis = this.ballM.visible ? this.ballM.position : null;
+    const bp = vis ? vis.clone() : new V(E.ball?.p?.x || 0, E.ball?.p?.y || 3, E.ball?.p?.z || -60);
+    const follow = this.set.camFollow !== false;
+    const st = E.ball ? E.ball.state : 'none';
+    const hz = Math.hypot(bp.x, bp.z);
+    const pred = E.pred && E.pred.landed ? E.pred.landed : null;
+    const deep = this.hrBall || (st === 'air' && !(E.ball.phys && E.ball.phys.landed) && ((pred && Math.hypot(pred.x, pred.z) > 170) || bp.y > 45));
+    let pos, look, fov, kp = 3, kl = 7;
+    if (E.trot && E.pt > (this.hrBall ? 99 : 2.8)) {
+      // home run trot: low tracking shot on the batter
+      const br = E.runners.find(r => r.isBatter) || E.runners[0];
+      const rp = br ? new V(br.p.x, 3.2, br.p.z) : new V(0, 3, 0);
+      const out = new V(rp.x, 0, rp.z).normalize(); if (!isFinite(out.x)) out.set(0, 0, 1);
+      pos = new V(rp.x * 0.55, 14, rp.z * 0.55 + 46); look = rp; fov = P ? 44 : 30; kp = 2; kl = 5;
+      C.mode = 'trot';
+    } else if (!follow) {
+      const tx = bp.x, tz = bp.z, ty = Math.min(bp.y, 60) * 0.5, d = hz;
+      pos = new V(tx * 0.3, 42 + d * 0.16 + (P ? 30 : 0), 78 + (P ? 40 : 0) - Math.min(0, tz) * 0.12);
+      look = new V(tx * 0.85, ty, tz * 0.85 - 10); fov = P ? 58 : 42;
+    } else if (deep) {
+      // fly ball: camera rises up behind the plate and rides out with the ball, zooming as it carries
+      const dir = new V(bp.x, 0, bp.z); if (dir.lengthSq() < 1) dir.set(0, 0, -1); dir.normalize();
+      const behind = bp.z > -25; // pop-ups behind the plate: look back at it from the infield
+      const along = behind ? 0 : Math.min(hz * 0.42, 150);
+      pos = behind ? new V(bp.x * 0.3, 34 + Math.min(bp.y, 120) * 0.3, -70) : new V(dir.x * (along - 34), 30 + Math.min(bp.y, 140) * 0.42 + hz * 0.08, dir.z * (along - 34) + 22);
+      // aim between the ball and where it comes down, so the field stays in the shot
+      const land = this.hrBall ? new V(bp.x, 0, bp.z) : pred ? new V(pred.x, 0, pred.z) : new V(bp.x, 0, bp.z);
+      look = new V(bp.x * 0.6 + land.x * 0.4, bp.y * 0.4, bp.z * 0.6 + land.z * 0.4);
+      const dist = pos.distanceTo(look);
+      const toB = bp.clone().sub(pos).normalize(), toL = look.clone().sub(pos).normalize();
+      const off = Math.acos(Math.max(-1, Math.min(1, toB.dot(toL)))) * 57.3; // degrees ball sits off-center
+      const need = (off * 2 + 8) / (P ? 0.55 : 1);
+      fov = Math.max(P ? 34 : 20, Math.min(P ? 70 : 52, Math.max(need, 2 * Math.atan(((P ? 60 : 44)) / dist) * 57.3)));
+      kp = 2.6; kl = 14; C.mode = 'fly';
+    } else {
+      // grounders, line drives, throws: high home cam that pans with the ball and frames the play
+      const ty = Math.min(bp.y, 40) * 0.35;
+      const tgt = new V(bp.x, ty, bp.z);
+      if (st === 'thrown' && E.ball.throw) { const T = E.ball.throw; tgt.set((bp.x * 2 + T.b.x) / 3, ty, (bp.z * 2 + T.b.z) / 3); }
+      const d = Math.hypot(tgt.x, tgt.z);
+      // keep the camera over fair territory behind the plate even when the ball goes foul / into the seats
+      let ph2 = Math.atan2(tgt.x, -tgt.z); if (!isFinite(ph2)) ph2 = 0; ph2 = Math.max(-0.6, Math.min(0.6, ph2));
+      const dc = Math.min(d, 260);
+      const cx = Math.sin(ph2) * dc, cz = -Math.cos(ph2) * dc;
+      pos = new V(cx * 0.42, 46 + d * 0.2 + (P ? 26 : 0), cz * 0.42 + 72 + (P ? 34 : 0));
+      look = tgt;
+      const dist = pos.distanceTo(tgt);
+      fov = Math.max(P ? 40 : 26, Math.min(P ? 66 : 50, 2 * Math.atan(((P ? 95 : 70) + d * 0.12) / dist) * 57.3));
+      kp = 2.2; kl = 6; C.mode = 'ground';
+    }
+    // first instant after contact: stay put and whip the look onto the ball (no teleport)
+    if (C.t < 0.35 && C.mode !== 'trot') { pos = C.pos.clone().lerp(pos, C.t / 0.35 * 0.4); kl = 16; }
+    const ap = 1 - Math.exp(-dt * kp), al = 1 - Math.exp(-dt * kl);
+    C.pos.lerp(pos, ap); C.look.lerp(look, al); C.fov += (fov - C.fov) * (1 - Math.exp(-dt * 2.5));
+    cam.position.copy(C.pos); cam.lookAt(C.look); cam.fov = C.fov; cam.updateProjectionMatrix();
+    if (this.camLook) this.camLook.copy(C.look);
+  }
+  startReplay() {
+    const w = this.replayWant; this.replayWant = null; this.rec.stop();
+    if (this.E.derby && !window.__replayDerby) return;
+    const r = makeReplay(this, this.rec, w.kind, w); if (!r) return;
+    this.replay = r; this.hrBall = null;
+    this.hud.replayTag(true);
+  }
+  endReplay() {
+    this.replay = null; this.hud.replayTag(false); this.camCut = true;
+    if (this.E.phase === 'dead') this.E.pt = Math.max(this.E.pt, this.E.deadWait);
+  }
+  // cosmetic flight of a home run ball after it clears the wall (the engine stops tracking it there)
+  startHrBall() {
+    const b = this.E.ball && this.E.ball.phys; if (!b) return;
+    this.hrBall = { p: { ...b.p }, v: { ...b.v }, t: 0 };
+  }
+  stepHrBall(dt) {
+    const H = this.hrBall; if (!H) return;
+    if (this.paused) return;
+    H.t += dt;
+    if (!H.done) {
+      if (this.E.deadWait) this.E.pt = Math.min(this.E.pt, this.E.deadWait - 1.6);
+      const sp = Math.hypot(H.v.x, H.v.y, H.v.z), kD = 0.0019 * sp;
+      H.v.x -= H.v.x * kD * dt; H.v.z -= H.v.z * kD * dt; H.v.y -= (32.17 + H.v.y * kD) * dt;
+      H.p.x += H.v.x * dt; H.p.y += H.v.y * dt; H.p.z += H.v.z * dt;
+      const phi = Math.atan2(H.p.x, -H.p.z), d = Math.hypot(H.p.x, H.p.z), wr = this.park.wallR(phi), wh = this.park.wallH(phi);
+      const seat = wh + Math.max(0, d - wr - 6) * 0.42 + 4;
+      if (H.p.y <= seat || H.t > 4) { H.done = true; H.p.y = Math.max(H.p.y, seat); H.land = H.t; }
+    }
+    if ((H.done && H.t - H.land > 1.4) || this.E.phase !== 'dead') this.hrBall = null;
   }
   // ---------- main loop ----------
   loop(now) {
@@ -228,7 +316,14 @@ class LiveGame {
     this.device = inp.device;
     if (inp.press.pause && this.mode === 'game') this.pause();
     if (this.cardSkip && (inp.press.skip || inp.press.tap || inp.press.swing)) { const f = this.cardSkip; this.cardSkip = null; f(); }
-    if (this.mode === 'game' && !this.paused) {
+    if (this.replay) {
+      if (inp.press.skip || inp.press.tap || inp.press.swing || inp.press.power) this.replay.skip();
+      if (!this.paused && !this.replay.update(dt)) this.endReplay();
+    } else if (this.mode === 'game' && !this.paused) {
+      const E = this.E;
+      if (this.replayWant && E.phase === 'dead' && E.deadWait && E.pt >= E.deadWait - 0.3 && this.set.replays !== false) this.startReplay();
+    }
+    if (!this.replay && this.mode === 'game' && !this.paused) {
       const E = this.E;
       // feed input
       E.in.stick = inp.stick; E.in.press = { ...E.in.press, ...inp.press };
@@ -243,9 +338,13 @@ class LiveGame {
       while (this.acc >= 1 / 60) { E.update(1 / 60); this.acc -= 1 / 60; this.handleEvents(); if (this.mode !== 'game') break; }
       if (Math.abs(inp.stick.x) + Math.abs(inp.stick.y) > 0 || (inp.rel && (inp.rel.x || inp.rel.y))) E.in.abs = null;
     }
-    if (this.mode === 'game' || this.mode === 'pregame' || this.mode === 'switch' || this.mode === 'final') this.syncActors(dt);
-    this.syncBall();
-    this.updateCamera(dt);
+    if (!this.replay) {
+      if (this.mode === 'game' || this.mode === 'pregame' || this.mode === 'switch' || this.mode === 'final') this.syncActors(dt);
+      if (this.hrBall) this.stepHrBall(dt);
+      this.syncBall();
+      this.updateCamera(dt);
+      if (this.rec.on) { if (this.mode === 'game' && ['live', 'dead'].includes(this.E.phase)) this.rec.capture(dt); else this.rec.stop(); }
+    }
     if (this.presCam) this.presCam(dt);
     this.excite = Math.max(0, this.excite - dt * 0.25);
     this.park.update(dt, this.t, this.excite);
@@ -281,8 +380,8 @@ class LiveGame {
           break;
         }
         case 'foul': Sound.crack(0.4); H.ticker('FOUL BALL'); this.excite = Math.max(this.excite, 0.15); break;
-        case 'contact': { const q = Math.min(1, ev.ev / 105); Sound.crack(q); this.excite = Math.max(this.excite, ev.ev > 95 && ev.la > 15 ? 0.6 : 0.3); break; }
-        case 'catch': Sound.glove(); if (ev.dive) H.banner(ev.fly ? 'WHAT A CATCH' : 'GREAT STOP', '', 'gold', 1400); break;
+        case 'contact': { this.rec.start(); this.replayWant = null; const q = Math.min(1, ev.ev / 105); Sound.crack(q); this.excite = Math.max(this.excite, ev.ev > 95 && ev.la > 15 ? 0.6 : 0.3); break; }
+        case 'catch': Sound.glove(); if (ev.dive && ev.fly && !this.replayWant) this.replayWant = { kind: 'catch', at: { x: E.ball.p.x, z: E.ball.p.z }, t: this.rec.t, lefty: E.bat && E.bat.hand === 'L' }; if (ev.dive) H.banner(ev.fly ? 'WHAT A CATCH' : 'GREAT STOP', '', 'gold', 1400); break;
         case 'dive_miss': this.excite = Math.max(this.excite, 0.5); break;
         case 'wall': Sound.thud(); this.excite = Math.max(this.excite, 0.7); break;
         case 'error': H.banner('ERROR', '', 'red', 1300); break;
@@ -292,7 +391,7 @@ class LiveGame {
         }
         case 'run_scores': this.excite = Math.max(this.excite, 0.75); break;
         case 'home_run': {
-          this.excite = 1; Sound.horn();
+          this.excite = 1; Sound.horn(); this.startHrBall(); this.replayWant = { kind: 'hr', lefty: E.bat && E.bat.hand === 'L' };
           const slam = ev.runners === 3;
           H.banner(slam ? 'GRAND SLAM' : 'HOME RUN', `${ev.dist} FT   |   ${ev.ev.toFixed(1)} MPH   |   ${Math.round(ev.la)} DEG`, 'gold', 4200);
           this.park.drawBoard({ big: slam ? 'GRAND SLAM' : 'HOME RUN', sub: DB.full(DB.player(E.bat.pid)).toUpperCase() });
@@ -363,16 +462,16 @@ class LiveGame {
     await wait(4200);
     // 2) lineups
     if (!skipped) {
-      this.dolly(V(-160, 60, 40), V(160, 60, 40), V(0, 0, -100), V(0, 0, -100), 6, 40);
-      const lu = (side, t) => { const s = E.st.sides[side]; return `<div class="lu"><div class="hd" style="background:${t.c1}">${badge(t, 30).outerHTML}${esc(t.name)}</div><table>${s.lineup.map((x, i) => { const p = DB.player(x.pid) || {}; const ln = p.ln26 || []; return `<tr><td class="o">${i + 1}</td><td class="p">${x.pos}</td><td>${esc(DB.full(p))}</td><td class="n">${ln[2] != null ? fmt3(ln[2]) : ''}</td><td class="n">${ln[3] ?? ''} HR</td></tr>`; }).join('')}<tr class="sp"><td class="o">SP</td><td class="p">${(DB.player(s.sp)?.th || 'R') + 'HP'}</td><td>${esc(DB.full(DB.player(s.sp)))}</td><td class="n">${DB.player(s.sp)?.ln26 ? (+DB.player(s.sp).ln26[4]).toFixed(2) : ''}</td><td class="n">ERA</td></tr></table></div>`; };
+      this.dolly(V(-70, 45, 10), V(70, 45, 10), V(0, 0, -100), V(0, 0, -100), 6, 44);
+      const lu = (side, t) => { const s = E.st.sides[side]; return `<div class="lu"><div class="hd" style="background:${t.c1}">${badge(t, 30).outerHTML}${esc(t.name)}</div><table>${s.lineup.map((x, i) => { const p = DB.player(x.pid) || {}; const ln = p.ln26 || []; return `<tr><td class="o">${i + 1}</td><td class="p">${x.pos}</td><td>${esc(DB.full(p))}</td><td class="n">${ln[2] != null ? fmt3(ln[2]) : ''}</td><td class="n">${ln[3] ?? ''} HR</td></tr>`; }).join('')}<tr class="sp"><td class="o">SP</td><td class="p">${(DB.player(s.sp)?.th || 'R') + 'HP'}</td><td>${esc(DB.full(DB.player(s.sp)))}</td><td class="n">${DB.player(s.sp) && DB.pLine(DB.player(s.sp))[4] != null ? (+DB.pLine(DB.player(s.sp))[4]).toFixed(2) : ''}</td><td class="n">ERA</td></tr></table></div>`; };
       H.card(`<div class="pg-title"><div class="p">STARTING LINEUPS</div></div><div class="lus">${lu(0, A)}${lu(1, Hm)}</div>`, { onSkip: skip });
-      for (const c of H.cardEl.querySelectorAll('canvas.badge')) { const t = DB.TEAMS.find(x => c.parentElement.textContent.includes(x.name)); if (t) c.replaceWith(badge(t, 30)); }
+      for (const c of H.cardEl.querySelectorAll('canvas.badge[data-b]')) c.replaceWith(badge(DB.team(c.dataset.b), 30));
       await wait(6500);
     }
     // 3) pitching matchup with a close look at the mound
     if (!skipped) {
       this.dolly(V(14, 6, -44), V(9, 6.5, -47), V(0, 5, -60.5), V(0, 5.2, -60.5), 4.5, 30);
-      const pc = pid => { const p = DB.player(pid) || {}, ln = p.ln26 || []; const ar = (p.pit || []).slice(0, 4).map(x => x[0] + ' ' + Math.round(x[1])).join('  '); return `<div class="t"><div class="nm" style="font-size:clamp(22px,3.6vw,38px)">${esc(DB.full(p))}</div><div class="rec">${ln[2] ?? 0}-${ln[3] ?? 0}, ${ln[4] != null ? (+ln[4]).toFixed(2) : '-.--'} ERA, ${ln[6] ?? 0} K</div><div class="rec" style="color:#f2c14e">${esc(ar)}</div></div>`; };
+      const pc = pid => { const p = DB.player(pid) || {}, ln = DB.pLine(p); const ar = (p.pit || []).slice(0, 4).map(x => x[0] + ' ' + Math.round(x[1])).join('  '); return `<div class="t"><div class="nm" style="font-size:clamp(22px,3.6vw,38px)">${esc(DB.full(p))}</div><div class="rec">${ln[2] ?? 0}-${ln[3] ?? 0}, ${ln[4] != null ? (+ln[4]).toFixed(2) : '-.--'} ERA, ${ln[6] ?? 0} K</div><div class="rec" style="color:#f2c14e">${esc(ar)}</div></div>`; };
       H.card(`<div class="pg-title"><div class="p">PITCHING MATCHUP</div></div><div class="mu">${pc(E.st.sides[0].sp)}<div class="at">VS</div>${pc(E.st.sides[1].sp)}</div>`, { onSkip: skip });
       await wait(4500);
     }
@@ -471,7 +570,7 @@ class LiveGame {
     const E = this.E, fs = E.fieldingSide;
     const avail = S.bullpenLeft(E.st, fs);
     const inn = m.querySelector('.in');
-    inn.innerHTML = `<h2>BULLPEN</h2>${avail.map(pid => { const p = DB.player(pid) || {}; const ln = p.ln26 || []; return `<button class="opt" data-p="${pid}">${esc(DB.full(p))} <small>${p.pos} &middot; ${p.th}HP &middot; OVR ${p.ovr} &middot; ${ln[4] != null ? (+ln[4]).toFixed(2) + ' ERA' : ''}</small></button>`; }).join('') || '<div class="muted">Nobody left in the bullpen.</div>'}<button class="opt" data-p="">BACK</button>`;
+    inn.innerHTML = `<h2>BULLPEN</h2>${avail.map(pid => { const p = DB.player(pid) || {}; const ln = DB.pLine(p); return `<button class="opt" data-p="${pid}">${esc(DB.full(p))} <small>${p.pos} &middot; ${p.th}HP &middot; OVR ${p.ovr} &middot; ${ln[4] != null ? (+ln[4]).toFixed(2) + ' ERA' : ''}</small></button>`; }).join('') || '<div class="muted">Nobody left in the bullpen.</div>'}<button class="opt" data-p="">BACK</button>`;
     inn.querySelectorAll('.opt').forEach(b => b.onclick = () => { const pid = +b.dataset.p; close(); if (pid) { E.userPitchingChange(pid); this.handleEvents(); } });
   }
   simToEnd() {

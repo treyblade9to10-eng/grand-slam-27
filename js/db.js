@@ -1,5 +1,5 @@
 // Decoded roster database built from data.js (real MLB teams/players/parks as of DATA_DATE)
-import { TEAMS, PARKS, PLAYERS, DEPTH, FREE_AGENTS, PF, DATA_DATE } from './data.js';
+import { TEAMS, PARKS, PLAYERS, DEPTH, FREE_AGENTS, PF, DATA_DATE, LN26P } from './data.js';
 export { TEAMS, PARKS, DEPTH, DATA_DATE };
 const dec = row => { const o = {}; PF.forEach((k, i) => o[k] = row[i] ?? null); return o; };
 export const P = new Map();
@@ -35,3 +35,6 @@ export function teamOvr(id, depth = DEPTH[id]) {
   const avg = a => a.reduce((s, x) => s + x, 0) / Math.max(1, a.length);
   return Math.round(avg(hit) * 0.5 + avg(sp) * 0.32 + avg(rp) * 0.18);
 }
+
+// pitching season line (two-way players keep it separately)
+export const pLine = p => (p && typeof LN26P !== 'undefined' && LN26P[p.id]) || (p && p.ln26) || [];

@@ -2,6 +2,7 @@
 import { h, $, $$, esc, toast, badge, menuNav, modal } from './ui.js';
 import { Settings, saveSettings } from './store.js';
 import * as DB from './db.js';
+import { preloadLogos } from './logos.js';
 
 export const VERSION = document.querySelector('.ver')?.textContent || '';
 const Views = {};
@@ -170,6 +171,9 @@ register('settings', (el) => {
         optRow('PITCH METER', [[true, 'ON'], [false, 'OFF']], Settings.pitchMeter, v => set('pitchMeter', v === true || v === 'true')),
         optRow('AUTO THROW', [[true, 'ON'], [false, 'OFF']], Settings.autoThrow, v => set('autoThrow', v === true || v === 'true')),
         optRow('STRIKE ZONE', [[true, 'SHOW'], [false, 'HIDE']], Settings.strikeZone, v => set('strikeZone', v === true || v === 'true')),
+        optRow('TEAM LOGOS', [['real', 'REAL'], ['classic', 'CLASSIC']], Settings.logos, v => { set('logos', v); }),
+        optRow('FOLLOW THE BALL', [[true, 'ON'], [false, 'OFF']], Settings.camFollow, v => set('camFollow', v === true || v === 'true')),
+        optRow('REPLAYS', [[true, 'ON'], [false, 'OFF']], Settings.replays, v => set('replays', v === true || v === 'true')),
         optRow('BATTING CAMERA', [['broadcast', 'BROADCAST'], ['low', 'CATCHER']], Settings.camera, v => set('camera', v)),
         optRow('GRAPHICS', [['auto', 'AUTO'], ['high', 'HIGH'], ['fast', 'FAST']], Settings.gfx, v => set('gfx', v)),
         optRow('SOUND', [[true, 'ON'], [false, 'OFF']], Settings.sound, v => set('sound', v === true || v === 'true')),
@@ -186,6 +190,7 @@ register('season', async (el, args) => {
 });
 
 menuNav();
+preloadLogos(DB.TEAMS, ['primaryDark']);
 render();
 if ('serviceWorker' in navigator && location.protocol === 'https:') navigator.serviceWorker.register('sw.js').catch(() => { });
 window.__gs = { DB, Settings, go, render };

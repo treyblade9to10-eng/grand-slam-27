@@ -24,7 +24,7 @@ export const SWING_TIME = 0.3;
 export function xBA(ev, la) {
   if (la < 10) { if (ev < 72) return 0.18; return clamp(0.12 + (ev - 82) * 0.01, 0.1, 0.45); }
   if (la < 25) { if (ev < 75) return 0.36; return clamp(0.42 + (ev - 88) * 0.012, 0.3, 0.8); }
-  if (la < 50) return clamp(0.04 + (ev - 92) * 0.02, 0.02, 0.5);
+  if (la < 50) return clamp(0.02 + (ev - 94) * 0.016, 0.01, 0.36);
   return 0.02;
 } // seconds for the whole swing; contact at 50%
 
@@ -38,7 +38,7 @@ export class Engine {
     this.ev = []; // events for the view/HUD: {type, ...}
     this.time = 0;
     this.wind = opts.wind || { x: 0, z: 0 };
-    this.kD = 0.0020 * (opts.altitude > 4000 ? 0.83 : 1);
+    this.kD = 0.00195 * (opts.altitude > 4000 ? 0.83 : 1);
     this.phase = 'pa_start'; this.pt = 0;
     this.in = { stick: { x: 0, y: 0 }, abs: null, press: {}, held: {} };
     this.balls = 0; this.strikes = 0; this.pitchesPA = 0;
@@ -426,7 +426,7 @@ export class Engine {
     for (const f of Object.values(this.F)) if (!f.job) { f.job = { hold: true }; f.tgt = { x: f.home.x * 0.95, z: f.home.z * 0.95 }; }
   }
   runnersOnContact() {
-    const pl = this.play, fly = pl.la > 22 && pl.ev > 60;
+    const pl = this.play, fly = pl.la > 10 && pl.ev > 60;
     const twoOut = this.st.outs === 2;
     // forced chain
     const occ = new Set(this.runners.filter(r => !r.isBatter).map(r => r.base));
@@ -437,11 +437,11 @@ export class Engine {
       r.forced = forced && occ.has(1) || r.base === 1;
       if (r.base > 1) { let ok = true; for (let b = 1; b < r.base; b++) if (!occ.has(b)) ok = false; r.forced = ok; }
       r.steal = false;
-      if (twoOut || r.forced) { r.goal = r.base + 1; r.mode = 'run'; }
+      if (twoOut || (r.forced && !fly)) { r.goal = r.base + 1; r.mode = 'run'; }
       else if (fly) { r.mode = 'half'; r.goal = r.base; r.tag = r.base === 3 || (r.base === 2 && Math.abs(pl.spray) > 10); }
       else { // ground ball / liner, not forced
-        const leftSide = pl.spray * 1 < -5;
-        if (r.base === 2 && !leftSide) { r.goal = 3; r.mode = 'run'; }
+        const rightSide = pl.spray > 12;
+        if (r.base === 2 && rightSide && pl.ev < 95) { r.goal = 3; r.mode = 'run'; }
         else { r.goal = r.base; r.mode = 'hold'; }
       }
     }
@@ -552,7 +552,7 @@ export class Engine {
       const err = (0.008 + (1 - ch.fld / 99) * 0.022) * hard * (ch.n >= 7 ? 0.4 : 1);
       if (rand() < err) return this.bobble(ch);
       pl.fateDone = true;
-      this.fielded(ch, fate === 'hit' && ch.n <= 6 ? 0.6 : 0);
+      this.fielded(ch, fate === 'hit' && ch.n <= 6 ? 1.1 : 0);
     } else if (d <= reach + 5 && !ch.dove && ch.n <= 6 && Math.hypot(b.phys.v.x, b.phys.v.z) > 40 && y < 3) {
       ch.dove = true; ch.mode = 'dive'; ch.anim = 0;
       if (fate === 'out' || (!fate && rand() < 0.5)) { this.emit('dive', { n: ch.n }); pl.fateDone = true; this.fielded(ch, 0.6); }
@@ -717,7 +717,7 @@ export class Engine {
       const headed = (r.mode === 'return' ? r.base : r.goal) === b;
       const onIt = r.at === b;
       if (!headed || onIt) continue;
-      if (this.play.caughtFly && r.mode === 'return' && r.base === b) { this.markOut(r, 'doubled'); outs++; continue; }
+      if (this.play.caughtFly && r.mode === 'return' && r.base === b) { if (dist(r.p, baseP(b)) > 6) { this.markOut(r, 'doubled'); outs++; } continue; }
       if (this.play.kind === 'steal' && this.play.stealSafe) { this.emit('safe', { base: b }); continue; }
       if (r.forcedTo === b || r.isBatter && b === 1 || this.isForced(r, b)) { this.markOut(r, 'force'); outs++; }
       else if (dist(r.p, baseP(b)) > 1.5) { this.markOut(r, 'tag'); outs++; }
@@ -730,7 +730,7 @@ export class Engine {
     if (!r || r.out) return;
     r.out = true; r.mode = 'out'; this.play.outs++;
     if (this.play.kind === 'hit' && this.play.fair == null) this.play.fair = true;
-    this.emit('out', { pid: r.pid, how, outs: this.st.outs + this.play.outs });
+    this.emit('out', { pid: r.pid, how, outs: this.st.outs + this.play.outs, base: r.goal, batter: !!r.isBatter, from: r.base });
     // after an out, runners no longer forced if the batter is out at first
     if (r.isBatter) for (const x of this.runners) x.forced = false;
     if (this.st.outs + this.play.outs >= 3) { this.play.done = true; }
@@ -749,7 +749,7 @@ export class Engine {
         const h = b.state === 'held' ? b.holder : this.chaser;
         const tt = h ? this.throwTime(h, tgt) + (b.state === 'held' ? 0 : 0.6) : 9;
         const outsNow = this.st.outs + pl.outs;
-        if (outsNow < 3 && !this.runners.some(x => !x.out && !x.scored && x !== r && x.base === tgt) && eta + (tgt === 4 ? 0.1 : 0.45) < tt) { r.goal = tgt; r.mode = 'run'; this.emit('tag_go', { pid: r.pid }); }
+        if (outsNow < 3 && !this.runners.some(x => !x.out && !x.scored && x !== r && x.base === tgt) && eta + (tgt === 4 ? -0.55 : 0.3) < tt) { r.goal = tgt; r.mode = 'run'; this.emit('tag_go', { pid: r.pid }); }
         else r.mode = 'hold';
       }
       // user overrides
@@ -757,7 +757,7 @@ export class Engine {
       if (this.userBats && this.in.press.backAll && r.mode === 'run' && !r.isBatter && !r.forcedTo) { r.goal = Math.max(r.base, r.goal - 1); r.mode = 'return'; }
       // fly in the air: half-way runners wait to see it
       if (r.mode === 'half') {
-        if (b.state === 'air' && !b.phys.landed) { r.goal = r.base; r.halfS = r.tag ? 0 : 0.42; }
+        if (b.state === 'air' && !b.phys.landed) { r.goal = r.base; r.halfS = r.tag ? 0 : pl.la < 20 ? 0.06 : (r.base === 2 ? 0.22 : 0.34); }
         else if (b.state !== 'air' || b.phys.landed) { if (!pl.caughtFly) { r.mode = 'run'; r.goal = r.base + 1; } else { r.mode = 'return'; r.goal = r.base; } }
       }
       // reached a base: decide whether to take another
@@ -774,7 +774,7 @@ export class Engine {
           else if (b.state === 'thrown') def = b.throw.base === next ? (b.throw.dur - b.throw.t) : (b.throw.dur - b.throw.t) + this.throwTime(b.throw.recv, next) + 0.3;
           else { const ch = this.chaser; const pt = b.p; def = ch ? (dist(ch.p, pt) / ch.speed + 0.35 + 0.18 + dist(pt, baseP(next)) / (ch.arm * PH.MPH * 0.82)) : 3; }
           def += next === 4 ? 0.35 : 0.15; // catcher / fielder still has to apply the tag
-          go = eta + (r.isBatter ? 0.45 : (this.st.outs + pl.outs === 2 ? -0.6 : -0.35)) < def && !(pl.caughtFly);
+          go = eta + (r.isBatter ? (next === 3 ? -0.2 : 0.45) : (this.st.outs + pl.outs === 2 ? -0.6 : next === 3 ? 0.15 : -0.35)) < def && !(pl.caughtFly);
         }
         if (go) { r.goal = next; r.mode = 'run'; this.emit('runner_go', { pid: r.pid, base: next }); }
         else { r.mode = 'hold'; }

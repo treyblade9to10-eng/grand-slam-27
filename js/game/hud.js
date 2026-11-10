@@ -1,7 +1,7 @@
 // In-game HUD: scorebug, lower thirds, banners, strike zone / PCI overlay, context buttons for touch, key hints.
 import * as THREE from '../lib/three.min.js';
 import { ZONE, PITCH_NAMES } from './phys.js';
-import { player, team as teamOf, nm, full } from '../db.js';
+import { player, team as teamOf, nm, full, pLine } from '../db.js';
 import { badge, esc, fmt3 } from '../ui.js';
 
 const el = (tag, cls, html) => { const e = document.createElement(tag); if (cls) e.className = cls; if (html != null) e.innerHTML = html; return e; };
@@ -32,17 +32,31 @@ export class HUD {
   // ---------- scorebug ----------
   drawBug() {
     const E = this.G.E, st = E.st, A = teamOf(st.box.away), H = teamOf(st.box.home);
-    if (E.derby) { const d = E.derby, k = d.hr + '|' + d.outs; if (k === this.bugKey) return; this.bugKey = k; this.bug.innerHTML = `<div class="mid" style="border:0"><div class="inn"><b>HR</b>${d.hr}</div><div class="inn"><b>OUTS</b>${d.outs}/${d.max}</div><div class="inn"><b>LONGEST</b>${d.best || '-'}</div></div>`; return; }
-    const p = player(E.pitcher()), pc = st.pc[E.pitcher()] || 0;
+    if (E.derby) { const d = E.derby, k = d.hr + '|' + d.outs; if (k === this.bugKey) return; this.bugKey = k; this.bug.className = 'bug derby'; this.bug.innerHTML = `<div class="mid" style="border:0"><div class="inn"><b>HR</b>${d.hr}</div><div class="inn"><b>OUTS</b>${d.outs}/${d.max}</div><div class="inn"><b>LONGEST</b>${d.best || '-'}</div></div>`; return; }
+    if (!this.bugBuilt) {
+      this.bugBuilt = true; this.bug.className = 'bug';
+      const row = (t, i) => `<div class="tr" data-i="${i}" style="--c1:${t.c1};--c2:${t.c2}"><div class="lg"></div><div class="ab">${t.id}</div><div class="sc">0</div></div>`;
+      this.bug.innerHTML = `<div class="main"><div class="tm">${row(A, 0)}${row(H, 1)}</div>
+        <div class="mid"><div class="inn"><i class="arr"></i><span class="n">1</span></div>
+        <div class="dia"><span class="b2"></span><span class="b3"></span><span class="b1"></span></div>
+        <div class="cnt"><div class="bs">0-0</div><div class="outs"><i></i><i></i><i></i></div></div></div></div>
+        <div class="strip"><span class="pp"></span><span class="pcn"></span></div>`;
+      const lg = this.bug.querySelectorAll('.lg'); lg[0].append(badge(A, 26)); lg[1].append(badge(H, 26));
+      this.bq = { rows: [...this.bug.querySelectorAll('.tr')], sc: [...this.bug.querySelectorAll('.sc')], arr: this.bug.querySelector('.arr'), inn: this.bug.querySelector('.inn .n'), bases: ['.b1', '.b2', '.b3'].map(q => this.bug.querySelector(q)), bs: this.bug.querySelector('.bs'), outs: [...this.bug.querySelectorAll('.outs i')], pp: this.bug.querySelector('.pp'), pcn: this.bug.querySelector('.pcn'), last: [0, 0] };
+    }
+    const p = player(E.pitcher()), pc = (st.pc[E.pitcher()] || 0) + (E.pitchesPA || 0);
     const key = [st.score, st.inn, st.top, st.bases.map(Boolean), st.outs, E.balls, E.strikes, pc, E.pitcher()].join('|');
     if (key === this.bugKey) return; this.bugKey = key;
-    const row = (t, s, bat) => `<div class="tr ${bat ? 'bat' : ''}"><div class="ab" style="background:linear-gradient(90deg,${t.c1}ee,${t.c1}88)"><i style="background:${t.c2}"></i>${t.id}</div><div class="sc">${s}</div></div>`;
-    const b = st.bases.map(x => x ? 'on' : '');
-    this.bug.innerHTML = `<div class="tm">${row(A, st.score[0], st.top)}${row(H, st.score[1], !st.top)}</div>
-      <div class="mid"><div class="inn"><b>${st.top ? 'TOP' : 'BOT'}</b>${ord(st.inn)}</div>
-      <div class="dia"><span class="b2 ${b[1]}"></span><span class="b3 ${b[2]}"></span><span class="b1 ${b[0]}"></span></div>
-      <div class="cnt"><div class="bs">${E.balls}-${E.strikes}</div><div class="outs"><i class="${st.outs > 0 ? 'on' : ''}"></i><i class="${st.outs > 1 ? 'on' : ''}"></i></div></div></div>
-      <div class="pc"><span>P: ${esc(p ? p.ln.toUpperCase() : '')}</span><span>PITCHES ${pc + (E.pitchesPA || 0)}</span></div>`;
+    const q = this.bq;
+    for (let i = 0; i < 2; i++) {
+      const v = st.score[i]; if (q.sc[i].textContent !== String(v)) { q.sc[i].textContent = v; if (v > q.last[i]) { q.rows[i].classList.remove('flash'); void q.rows[i].offsetWidth; q.rows[i].classList.add('flash'); } q.last[i] = v; }
+      q.rows[i].classList.toggle('bat', st.top ? i === 0 : i === 1);
+    }
+    q.arr.className = 'arr ' + (st.top ? 'up' : 'down'); q.inn.textContent = st.inn;
+    st.bases.forEach((x, i) => q.bases[i].classList.toggle('on', !!x));
+    q.bs.innerHTML = `${E.balls}<em>-</em>${E.strikes}`;
+    q.outs.forEach((o, i) => o.classList.toggle('on', st.outs > i));
+    q.pp.innerHTML = `<b>P</b> ${esc(p ? p.ln.toUpperCase() : '')}`; q.pcn.innerHTML = `<b>PC</b> ${pc}`;
   }
   pitchInfo(type, mph) { this.pinfo.innerHTML = `<div class="mph">${Math.round(mph)}<small>MPH</small></div><div class="ty">${PITCH_NAMES[type] || type}</div>`; this.pinfo.classList.add('on'); clearTimeout(this._pi); this._pi = setTimeout(() => this.pinfo.classList.remove('on'), 3200); }
   lower(pid, kind) {
@@ -56,7 +70,7 @@ export class HUD {
       const pos = E.st.sides[side].lineup.find(x => x.pid === pid)?.pos || p.pos;
       line = `${pos}  <b>${ln[2] != null ? fmt3(ln[2]) : '---'}</b> AVG  <b>${ln[3] ?? 0}</b> HR  <b>${ln[4] ?? 0}</b> RBI  &middot;  ${today}`;
     } else {
-      const ln = p.ln26 || [];
+      const ln = pLine(p);
       line = `${p.th === 'L' ? 'LHP' : 'RHP'}  <b>${ln[2] ?? 0}-${ln[3] ?? 0}</b>  <b>${ln[4] != null ? (+ln[4]).toFixed(2) : '-.--'}</b> ERA  <b>${ln[6] ?? 0}</b> K`;
     }
     this.l3.style.setProperty('--tc', t.c1);
@@ -68,11 +82,15 @@ export class HUD {
     this.bannerEl.classList.remove('on'); void this.bannerEl.offsetWidth; this.bannerEl.classList.add('on');
     clearTimeout(this._bn); this._bn = setTimeout(() => this.bannerEl.classList.remove('on'), ms);
   }
+  replayTag(on) {
+    if (!this.rpEl) { this.rpEl = el('div', 'rptag', '<i></i>REPLAY'); this.root.append(this.rpEl); }
+    this.rpEl.classList.toggle('on', on); this.root.classList.toggle('replaying', on);
+  }
   ticker(text, ms = 3000) { this.tick.textContent = text; this.tick.classList.add('on'); clearTimeout(this._tk); this._tk = setTimeout(() => this.tick.classList.remove('on'), ms); }
   // ---------- per frame ----------
   update(dt, device) {
     const G = this.G, E = G.E;
-    if (G.mode !== 'game') { this.zx.clearRect(0, 0, this.zc.width, this.zc.height); this.setButtons('', device); this.pitchList.style.display = 'none'; this.meterEl.classList.remove('on'); this.hint.style.display = 'none'; return; }
+    if (G.mode !== 'game') { this.zx.clearRect(0, 0, this.zc.width, this.zc.height); this.zc.style.visibility = 'hidden'; this.zVis = false; this.setButtons('', device); this.pitchList.style.display = 'none'; this.meterEl.classList.remove('on'); this.hint.style.display = 'none'; return; }
     this.drawBug();
     this.drawZone();
     const ph = E.phase;
@@ -145,10 +163,11 @@ export class HUD {
   }
   drawZone() {
     const G = this.G, E = G.E, x = this.zx, dpr = this.dpr;
-    x.setTransform(dpr, 0, 0, dpr, 0, 0); x.clearRect(0, 0, this.W, this.H);
+    x.setTransform(1, 0, 0, 1, 0, 0); x.clearRect(0, 0, this.zc.width, this.zc.height); x.setTransform(dpr, 0, 0, dpr, 0, 0);
     const ph = E.phase, batting = E.userBats, pitching = E.userPitches;
     const showZone = (ph === 'aim' || ph === 'windup' || ph === 'pitch' || ph === 'post_pitch') && G.camMode !== 'play' && (batting || pitching);
-    if (!showZone) return;
+    if (!showZone) { if (this.zVis !== false) { this.zc.style.visibility = 'hidden'; this.zVis = false; } return; }
+    if (this.zVis !== true) { this.zc.style.visibility = ''; this.zVis = true; }
     const z = ZONE, a = this.proj(z.x0, z.y1), b = this.proj(z.x1, z.y0);
     if (G.set.strikeZone) {
       x.strokeStyle = 'rgba(255,255,255,.55)'; x.lineWidth = 1.5; x.strokeRect(a.x, a.y, b.x - a.x, b.y - a.y);
