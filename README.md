@@ -10,3 +10,5 @@ A 3D baseball game that runs in the browser (phone, Chromebook, PC, controller).
 Fan project, not affiliated with MLB or any club. Team badges are original designs, not the clubs' trademarked logos.
 
 Sound credits: `audio/CREDITS.txt`. three.js license: `js/lib/THREE-LICENSE.txt`.
+
+Player body: "Universal Base Characters" by Quaternius (CC0 1.0, quaternius.com), packed into models/.

@@ -3,6 +3,7 @@ import { h, $, $$, esc, toast, badge, menuNav, modal } from './ui.js';
 import { Settings, saveSettings } from './store.js';
 import * as DB from './db.js';
 import { preloadLogos } from './logos.js';
+import { goLandscape } from './orient.js';
 
 export const VERSION = document.querySelector('.ver')?.textContent || '';
 const Views = {};
@@ -95,6 +96,7 @@ export function optRow(label, opts, cur, on) {
     h('div', { class: 'seg' }, opts.map(([v, t]) => h('button', { class: String(v) === String(cur) ? 'on' : '', onclick: () => on(v) }, t))));
 }
 async function startQuick() {
+  goLandscape();
   const { playLive } = await import('./game/game.js');
   const spA = Math.random() * 5 | 0, spH = Math.random() * 5 | 0;
   const box = await playLive({
@@ -191,6 +193,7 @@ register('season', async (el, args) => {
 
 menuNav();
 preloadLogos(DB.TEAMS, ['primaryDark']);
+import('./game/model.js').then(m => m.loadModels()).catch(() => { });
 render();
 if ('serviceWorker' in navigator && location.protocol === 'https:') navigator.serviceWorker.register('sw.js').catch(() => { });
 window.__gs = { DB, Settings, go, render };

@@ -1,5 +1,6 @@
 // MLB Grand Slam 27 - 3D ballplayers (skinned bodies from HUCK), faces, uniforms, gear, animation
 import * as THREE from '../lib/three.min.js';
+import * as HUM from './human.js';
 import { logoImg, loadLogo, onLogo, realLogos } from '../logos.js';
 import { Settings } from '../store.js';
 export const SKINS = ['#f0cfb6', '#e2ba9e', '#cfa083', '#bb8766', '#a67353', '#8e5e42', '#7a4c34', '#68402b'];
@@ -20,7 +21,7 @@ function shade(hex, f, toward = '#000000') { const c = new THREE.Color(hex), d =
 
 // ---------------- skeleton ----------------
 // index: 0 pelvis 1 spine 2 chest 3 neck 4 head 5 shL 6 elL 7 handL 8 shR 9 elR 10 handR 11 hipL 12 knL 13 ftL 14 hipR 15 knR 16 ftR
-const LEN = { thigh: 0.44, shin: 0.42, ankle: 0.09, upper: 0.29, fore: 0.26 };
+const LEN = { thigh: 0.44, shin: 0.42, ankle: 0.09, upper: 0.29, fore: 0.26, hipOff: 0.05, ankleH: 0.085 };
 function buildBones(armX) {
   const B = []; const mk = (parent, x, y, z) => { const b = new THREE.Bone(); b.position.set(x, y, z); if (parent !== null) B[parent].add(b); B.push(b); return b; };
   mk(null, 0, 1.0, 0);           // 0 pelvis (world 1.00)
@@ -660,6 +661,7 @@ export function makeAthlete(card, team, opts = {}) {
   const h2 = hashN(card.id);
   if (look.stub == null) look.stub = !look.beard && (h2 >> 7) % 3 === 0 ? 1 : 0;
   const pantsStyle = U.key === 'ump' ? 'long' : (h2 >> 4) % 5 < 2 ? 'long' : 'high';
+  if (HUM.H) return makeHumanAthlete(card, team, opts, look, U, h2, pantsStyle);
   const { g, ax } = bodyGeo(look.build, lod, pantsStyle);
   const bones = buildBones(ax);
   const Um = { ...U, mirror: !!opts.lefty };
@@ -724,6 +726,61 @@ export function makeAthlete(card, team, opts = {}) {
   root.scale.setScalar(look.h * FT);
   root.traverse((o) => { if (o.isMesh) o.castShadow = !o.userData.noShadow; });
   P.anim = { phase: Math.random() * 6, t: 0 };
+  return P;
+}
+
+
+// ---- real human body (human.js) driven by the same 17-bone rig ----
+const HAIRHEX = HAIRC;
+function makeHumanAthlete(card, team, opts, look, U, h2, pantsStyle) {
+  Object.assign(LEN, { thigh: HUM.HLEN.thigh, shin: HUM.HLEN.shin, upper: HUM.HLEN.upper, fore: HUM.HLEN.fore, hipOff: -HUM.HLEN.hipDy, ankleH: HUM.HLEN.ankle });
+  const bones = HUM.buildHumanBones();
+  const root = new THREE.Group(), flip = new THREE.Group(); root.add(flip);
+  const drv = new THREE.Group(); drv.add(bones[0]); flip.add(drv);
+  if (opts.lefty) flip.scale.x = -1;
+  const P = { root, flip, mesh: { skeleton: { bones } }, bones, U, body: bones[0], hips: bones[0], torso: bones[1], chest: bones[2], neck: bones[3], head: bones[4], shL: bones[5], elL: bones[6], handL: bones[7], shR: bones[8], elR: bones[9], handR: bones[10], hipL: bones[11], knL: bones[12], ftL: bones[13], hipR: bones[14], knR: bones[15], ftR: bones[16] };
+  const isUmp = U.key === 'ump';
+  const patch = team && !isUmp ? canvasTex('hpatch' + team.id, 256, 256, (x, W, H) => drawMark(x, team, 'primary', W / 2, H / 2, W * 0.92, H * 0.92, '#fff', '#000')) : null;
+  const skinIdx = Math.max(0, Math.min(7, (SKINMAP[look.skin] ?? look.skin) | 0));
+  HUM.attachHuman(P, {
+    U, card, team, look, skinIdx, hairHex: HAIRHEX[look.hairC] || HAIRHEX[1], lefty: !!opts.lefty,
+    gloves: !!opts.bat || !!look.gloves, gloveColor: opts.bat ? U.trim : '#1a1c22', under: !!look.sleeve || isUmp, long: pantsStyle === 'long',
+    headgear: opts.mask ? 'catcher' : opts.head, patchCanvas: patch ? patch.image : null, chestLogo: U.chestLogo && team ? logoImg(team, 'cap') : null, sleeveEnd: isUmp ? 0.5 : 0.355,
+  });
+  if (patch) P.hm.body.material.userData.u.uPatch.value = patch;
+  // caps / helmets / masks sit on the head bone, re-centred on the human skull
+  const hg = new THREE.Group(); hg.position.set(0, -0.036, 0.026); hg.rotation.x = 0.2; hg.scale.setScalar(1.1); P.head.add(hg);
+  const mirror = !!opts.lefty;
+  hg.userData.capRoot = 1;
+  if (opts.head === 'cap') addCap(hg, team, U, 'cap', mirror);
+  else if (opts.head === 'helmet') { hg.position.y += 0.012; hg.position.z -= 0.006; hg.rotation.x = 0.1; addCap(hg, team, U, 'helmet', mirror); }
+  else if (opts.head === 'ump') addCap(hg, null, U, 'cap', mirror);
+  if (opts.head === 'catcher' || opts.mask) {
+    addCap(hg, team, U, 'skull', mirror);
+    const frame = new THREE.Mesh(maskGeo(), M(isUmp ? '#2a2a2a' : '#1d1f24', 0.35, { metalness: 0.6 })); frame.position.set(0, 0.01, 0); hg.add(frame);
+    for (const y of [0.2, 0.04]) { const pad = new THREE.Mesh(maskPadGeo(), M('#4a3628', 0.8)); pad.position.set(0, y, 0.004); pad.scale.set(1, 0.6, 1); hg.add(pad); }
+  }
+  hg.traverse(o => { if (o.isMesh && (o.parent.userData.cap || /brim|flap|helmet|dec/.test(o.geometry.userData.k || ''))) o.userData.noShadow = true; });
+  if (opts.chestPad) {
+    const padM = new THREE.MeshPhysicalMaterial({ color: opts.chestPad, roughness: 0.45, clearcoat: 0.5 });
+    const pad = new THREE.Mesh(G('cpad3', () => { const b = new THREE.BoxGeometry(0.36, 0.5, 0.05, 10, 12, 1); const p = b.attributes.position; for (let i = 0; i < p.count; i++) { const x = p.getX(i), y = p.getY(i); const ey = Math.abs(y) / 0.25; let sx = 1; if (y < -0.08) sx = 1 - (-0.08 - y) * 1.1; p.setX(i, x * sx); p.setZ(i, p.getZ(i) - x * x * 2.2 + (1 - ey * ey) * 0.02 + Math.sin(y * 40) * 0.003); } b.computeVertexNormals(); return b; }), padM);
+    pad.position.set(0, -0.03, 0.16); P.chest.add(pad);
+    for (const s of ['L', 'R']) {
+      const sg = new THREE.Mesh(G('shin2', () => { const c = new THREE.CapsuleGeometry(0.058, 0.3, 4, 12, 1); c.scale(1, 1, 0.85); return c; }), padM); sg.position.set(0, -0.2, 0.06); P['kn' + s].add(sg);
+      const kc = new THREE.Mesh(G('kneecap', () => { const k = new THREE.SphereGeometry(0.068, 14, 10); k.scale(1, 0.9, 0.8); return k; }), padM); kc.position.set(0, -0.005, 0.07); P['kn' + s].add(kc);
+    }
+  }
+  if (opts.glove) { const gl = makeGlove(opts.head === 'catcher', h2 >> 9); gl.position.set(0, 0.02, 0); P.handL.add(gl); P.glove = gl; }
+  const shoeC = U.shoe || '#1b1b1f';
+  for (const s of ['L', 'R']) {
+    const u = new THREE.Mesh(shoeGeo(), M(shoeC, 0.4)); u.castShadow = true; u.scale.set(1.12, 1.05, 1.06); u.position.set(0, 0.004, 0.0); P['ft' + s].add(u);
+    const so = new THREE.Mesh(soleGeo(), M(U.shoeAccent && (h2 >> 11) % 3 === 0 ? U.shoeAccent : '#f4f4f4', 0.6)); so.scale.set(1.12, 1, 1.06); so.position.set(0, 0.004, 0); P['ft' + s].add(so);
+  }
+  if (opts.bat) { const pivot = new THREE.Group(); pivot.rotation.order = 'YXZ'; P.flip.add(pivot); const bat = makeBat(BATS[(h2 >> 6) % BATS.length]); pivot.add(bat); P.batPivot = pivot; P.bat = bat; }
+  root.scale.setScalar(look.h * FT * 0.985);
+  root.traverse((o) => { if (o.isMesh) o.castShadow = !o.userData.noShadow; });
+  P.anim = { phase: Math.random() * 6, t: 0 };
+  P.sync();
   return P;
 }
 
@@ -807,10 +864,11 @@ export function animate(P, pose, dt) {
   P.ftR.rotation.x = -(P.hipR.rotation.x + P.knR.rotation.x) * 0.92 - P.body.rotation.x * 0.3;
   // keep the planted foot on the ground
   const ext = Math.max(legExt(P.hipL.rotation.x, P.knL.rotation.x) * Math.cos(P.hipL.rotation.z), legExt(P.hipR.rotation.x, P.knR.rotation.x) * Math.cos(P.hipR.rotation.z));
-  const groundY = 0.05 + ext + 0.085;
+  const groundY = LEN.hipOff + ext + LEN.ankleH;
   const y = T.bodyY ?? groundY;
   P.body.position.y += (y - P.body.position.y) * (T.bodyY != null ? k : 1);
   if (P.batPivot) batPose(P, pose);
+  if (P.sync) P.sync();
 }
 
 // ---------------- portraits (card art) ----------------
@@ -938,3 +996,7 @@ function ikArm(P, side, target) {
   _q.setFromUnitVectors(_h0, t.normalize());
   sh.quaternion.copy(_q);
 }
+
+// Real human body meshes are loaded once before a game starts (see human.js). Safe to call many times.
+let _modelsP = null;
+export function loadModels() { if (!_modelsP) _modelsP = HUM.loadHuman().catch(e => { console.warn('human model failed, using fallback', e); return null; }); return _modelsP; }

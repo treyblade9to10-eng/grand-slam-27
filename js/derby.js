@@ -3,6 +3,7 @@ import { h, badge, esc, toast } from './ui.js';
 import * as DB from './db.js';
 import { Engine } from './game/engine.js';
 import { loadRaw, saveRaw } from './store.js';
+import { goLandscape } from './orient.js';
 
 export class DerbyEngine extends Engine {
   constructor(o) { super(o); this.derby = { hr: 0, outs: 0, best: 0, list: [], max: o.outsMax || 10 }; this.o.user = 'away'; }
@@ -67,6 +68,7 @@ export function derbyView(el) {
         h('h3', {}, 'PICK A SLUGGER'), list));
   };
   const start = async () => {
+    goLandscape();
     const { playLive } = await import('./game/game.js');
     const p = DB.player(pick), side = DB.defaultSide(p.t);
     side.lineup = side.lineup.map(x => x.pid === pick ? x : x); if (!side.lineup.some(x => x.pid === pick)) side.lineup[0] = { pid: pick, pos: 'DH' };

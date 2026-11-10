@@ -1,7 +1,8 @@
 // MLB Grand Slam 27 - live 3D game: stage + engine + players + cameras + broadcast presentation
 import * as THREE from '../lib/three.min.js';
 import { makeStage } from './scene.js';
-import { makeAthlete, animate, uniform, SKINMAP, PITCH_RELEASE, THROW_RELEASE } from './model.js';
+import { makeAthlete, animate, uniform, SKINMAP, PITCH_RELEASE, THROW_RELEASE, loadModels } from './model.js';
+import { isTouch, goLandscape, leaveLandscape } from '../orient.js';
 import { Engine, SWING_TIME } from './engine.js';
 import { Recorder, makeReplay } from './replay.js';
 import { HUD } from './hud.js';
@@ -39,7 +40,10 @@ class LiveGame {
     const o = this.o, root = this.root;
     root.innerHTML = ''; root.classList.add('on');
     const ld = document.createElement('div'); ld.className = 'loading'; ld.innerHTML = `LOADING ${esc(DB.park(o.park).name.toUpperCase())}<small>Getting the crowd in their seats</small>`; root.append(ld);
+    goLandscape();
+    this.touch = isTouch();
     await new Promise(r => setTimeout(r, 30));
+    await loadModels();
     const homeT = DB.team(o.home.team), awayT = DB.team(o.away.team);
     this.homeT = homeT; this.awayT = awayT;
     const time = o.time || 'night';
@@ -52,6 +56,9 @@ class LiveGame {
     const EC = o.EngineClass || Engine;
     this.E = new EC({ slugger: o.slugger, away: o.away, home: o.home, park: this.park, parkId: o.park, user: o.user, innings: o.innings || 9, settings: this.set, state: o.state || S.newState(o.away, o.home, { park: o.park, innings: o.innings || 9, ...(o.simOpts || {}) }), altitude: alt, wind });
     this.hud = new HUD(root, this);
+    this.rotEl = document.createElement('div'); this.rotEl.className = 'rotate';
+    this.rotEl.innerHTML = `<div class="in"><svg viewBox="0 0 120 120" aria-hidden="true"><rect class="ph" x="38" y="16" width="44" height="80" rx="8"/><rect class="sc" x="43" y="25" width="34" height="58" rx="2"/><path class="ar" d="M22 74 A44 44 0 0 0 66 108"/><path class="ah" d="M60 101 L68 109 L58 114"/></svg><div class="t">TURN YOUR PHONE SIDEWAYS</div><div class="s">Grand Slam 27 plays in landscape</div></div>`;
+    root.append(this.rotEl); this.rotOn = false;
     this.input = new Input(root);
     // ball
     this.ballM = new THREE.Mesh(new THREE.SphereGeometry(0.2, 14, 10), new THREE.MeshStandardMaterial({ color: '#ffffff', emissive: '#9a9a9a', roughness: 0.4 }));
@@ -147,7 +154,7 @@ class LiveGame {
     // umpire
     const slot = E.bat && E.bat.hand === 'L' ? 1.1 : -1.1;
     this.ump.root.position.x += (slot - this.ump.root.position.x) * Math.min(1, dt * 4);
-    animate(this.ump, { mode: ['aim', 'windup', 'pitch', 'intro'].includes(E.phase) ? 'ump' : 'stand' }, dt);
+    animate(this.ump, { mode: ['aim', 'windup', 'pitch', 'intro'].includes(E.phase) || (E.phase === 'post_pitch' && this.phoneL()) ? 'ump' : 'stand' }, dt);
     for (const a of this.actors.values()) if (!a.used) a.root.visible = false;
   }
   nearBase(r) { const B = [[63.64, -63.64], [0, -127.28], [-63.64, -63.64], [0, 0]]; let m = 1e9; for (const [x, z] of B) m = Math.min(m, Math.hypot(r.p.x - x, r.p.z - z)); return m; }
@@ -180,6 +187,8 @@ class LiveGame {
   }
   // ---------- cameras ----------
   portrait() { return this.cam.aspect < 0.95; }
+  // phone held sideways: wide and short screen with thumb buttons along the bottom corners
+  phoneL() { return !!this.touch && this.cam.aspect >= 1.3 && (this.hud ? this.hud.H : innerHeight) < 560; }
   setCam(pos, look, fov, k = 1) {
     const c = this.cam;
     if (!this.camLook) this.camLook = new THREE.Vector3().copy(look);
@@ -191,8 +200,10 @@ class LiveGame {
     const P = this.portrait(), V = (x, y, z) => new THREE.Vector3(x, y, z);
     const low = this.set.camera === 'low';
     switch (name) {
-      case 'bat': return P ? [V(0, low ? 13 : 16.5, low ? 26 : 33), V(0, 2.4, -40), 46] : [V(0, low ? 11 : 13.5, low ? 19 : 24), V(0, 2.6, -40), low ? 32 : 30];
-      case 'pitch': return P ? [V(3.2, 11, -92), V(0, 2.4, 0), 32] : [V(3.4, 10.2, -82), V(0, 2.4, 0), 21];
+      case 'bat': if (this.phoneL()) return low ? [V(0, 9.5, 16), V(0, 0.8, -12), 40] : [V(0, 11, 19), V(0, 0.5, -12), 38];
+        return P ? [V(0, low ? 13 : 16.5, low ? 26 : 33), V(0, 2.4, -40), 46] : low ? [V(0, 9.5, 16), V(0, 1.0, -12), 36] : [V(0, 11, 19.5), V(0, 0.8, -12), 34];
+      case 'pitch': if (this.phoneL()) return [V(2.5, 8.5, -74), V(0, 2.4, 0), 13];
+        return P ? [V(3.2, 11, -92), V(0, 2.4, 0), 32] : [V(3.4, 10.2, -82), V(0, 2.4, 0), 21];
       case 'intro': { const L = this.E.bat && this.E.bat.hand === 'L'; return [V(L ? -4 : 4, 5.6, -7.5), V(L ? 2.9 : -2.9, 4.6, 0), P ? 50 : 34]; }
       default: return null;
     }
@@ -312,6 +323,10 @@ class LiveGame {
     if (!this.running) return;
     requestAnimationFrame(this.loop);
     let dt = Math.min(0.05, (now - this.last) / 1000); this.last = now; if (FIXED) dt = FIXED; this.t += dt;
+    // phones: the game only runs held sideways - hold everything while the phone is upright
+    const needRot = this.touch && innerHeight > innerWidth * 1.05;
+    if (needRot !== this.rotOn) { this.rotOn = needRot; this.rotEl.classList.toggle('on', needRot); this.root.classList.toggle('rotwait', needRot); if (needRot) Sound.excite(0); }
+    if (needRot) { this.input.poll(); this.stage.renderer.render(this.scene, this.cam); return; }
     const inp = this.input.poll();
     this.device = inp.device;
     if (inp.press.pause && this.mode === 'game') this.pause();
@@ -444,7 +459,7 @@ class LiveGame {
     const E = this.E, A = this.awayT, Hm = this.homeT, pk = DB.park(this.o.park), H = this.hud;
     const V = (x, y, z) => new THREE.Vector3(x, y, z);
     let skipped = false; const skip = () => { skipped = true; };
-    const wait = ms => new Promise(r => { const t0 = performance.now(); const f = () => { if (skipped || performance.now() - t0 > ms) r(); else requestAnimationFrame(f); }; f(); });
+    const wait = ms => new Promise(r => { let t0 = performance.now(), last = t0; const f = () => { const n = performance.now(); if (this.rotOn) t0 += n - last; last = n; if (skipped || n - t0 > ms) r(); else requestAnimationFrame(f); }; f(); });
     this.cardSkip = skip;
     const temp = this.park.closed ? 72 : this.o.time === 'day' ? 74 + (Math.random() * 14 | 0) : 64 + (Math.random() * 12 | 0);
     const wmph = Math.round(Math.hypot(this.wind.x, this.wind.z) / 1.467);
@@ -530,6 +545,7 @@ class LiveGame {
     this.running = false; this.input.dispose(); this.hud.dispose(); Sound.stop();
     this.stage.dispose(); this.root.innerHTML = ''; this.root.classList.remove('on');
     window.__live = null;
+    if (this.touch) leaveLandscape();
     this.resolve(box);
   }
   // ---------- pause ----------

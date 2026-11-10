@@ -37,6 +37,7 @@ function applyFrame(G, f) {
     const bs = bonesOf(a);
     for (let i = 0; i < bs.length && i * 3 < s.rot.length; i++) bs[i].rotation.set(s.rot[i * 3], s.rot[i * 3 + 1], s.rot[i * 3 + 2]);
     if (bs[0]) bs[0].position.y = s.by;
+    if (a.sync) a.sync();
     if (s.bp && a.batPivot) { a.batPivot.position.set(s.bp[0], s.bp[1], s.bp[2]); a.batPivot.rotation.set(s.bp[3], s.bp[4], s.bp[5]); }
   }
   for (const a of G.actors.values()) if (!used.has(a)) a.root.visible = false;
