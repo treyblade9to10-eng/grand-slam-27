@@ -90,7 +90,21 @@ export async function loadHuman() {
     const o = C.sub(hand); gripOff[sd] = new THREE.Vector3(o.dot(K), o.dot(N), o.dot(X));
     grip[sd] = new THREE.Matrix4().makeBasis(K, N, X).transpose(); // inverse of the rest basis
   }
-  H = { grip, gripOff, fist, curl, tpl, bones, bodyMesh, eyes, browMesh, restQ, restLocal, skinImgs: [skinL, skinD], normal, hairT, eyeT, hair, skinCache: new Map(), headInvBind: headInv };
+  // torso cross-sections (bind pose, meters) used to keep the arms outside the body: per 3cm slice of height,
+  // the half width and the front/back of the trunk (arms are out to the side in the bind pose, so they are excluded)
+  const slices = [];
+  { const P = bodyMesh.geometry.attributes.position, Y0 = 0.80, DY = 0.03, N = 26;
+    for (let i = 0; i < N; i++) slices.push([0, 9, -9]);
+    for (let i = 0; i < P.count; i++) {
+      const x = Math.abs(P.getX(i)), y = P.getY(i), z = P.getZ(i);
+      const k = Math.floor((y - Y0) / DY); if (k < 0 || k >= N) continue;
+      if (x > (y > 1.3 ? 0.165 : 0.2)) continue;
+      const s = slices[k]; if (x > s[0]) s[0] = x; if (z < s[1]) s[1] = z; if (z > s[2]) s[2] = z;
+    }
+    for (const s of slices) if (s[1] > s[2]) { s[1] = -0.1; s[2] = 0.1; }
+    slices.Y0 = Y0; slices.DY = DY;
+  }
+  H = { slices, grip, gripOff, fist, curl, tpl, bones, bodyMesh, eyes, browMesh, restQ, restLocal, skinImgs: [skinL, skinD], normal, hairT, eyeT, hair, skinCache: new Map(), headInvBind: headInv };
   return H;
 }
 
@@ -280,6 +294,7 @@ export function attachHuman(P, o) {
   const hm = new THREE.MeshStandardMaterial({ color: hairC, map: H.hairT, roughness: 0.85, side: THREE.DoubleSide });
   let style = HAIRSTYLE[o.look.hair] ?? 'buzz'; if (o.headgear && o.headgear !== 'none') style = o.look.hair === 'bald' ? null : 'buzz';
   const head = bones.Head;
+  if (globalThis.__noHair) style = null;
   if (style && H.hair[style]) { const h = new THREE.Mesh(H.hair[style], hm); h.castShadow = true; head.add(h); }
   if (o.look.beard && H.hair.beard) head.add(new THREE.Mesh(H.hair.beard, hm));
   P.flip.add(root);

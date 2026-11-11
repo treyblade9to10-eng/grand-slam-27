@@ -451,6 +451,7 @@ export class Engine {
     // --- ball ---
     if (b.state === 'air') {
       if (!b.prevP) b.prevP = { x: b.p.x, z: b.p.z };
+      if (pl.kind === 'hit' && this.wallPlay(dt)) return;
       const steps = 4; let ev = null;
       for (let i = 0; i < steps; i++) { const e = PH.stepBall(b.phys, dt / steps, this.physPark()); if (e) ev = e; if (b.phys.hr || b.phys.outOfPlay || b.phys.stopped) break; }
       b.p = b.phys.p;
@@ -479,6 +480,49 @@ export class Engine {
     this.moveActors(dt);
     this.runnerLogic(dt);
     this.checkPlayEnd();
+  }
+  // ---------- at the wall: the outfielder plants a foot on the fence and leaps (can rob a home run) ----------
+  wallPlay(dt) {
+    const b = this.ball, pl = this.play, ph = b.phys;
+    if (ph.landed || ph.hitFence) return false;
+    const dd = Math.hypot(b.p.x, b.p.z), phi = Math.atan2(b.p.x, -b.p.z);
+    if (Math.abs(phi) > 0.79 || -b.p.z <= 0) return false;
+    const R = this.park.wallR(phi), H = this.park.wallH(phi);
+    const vh = (ph.v.x * b.p.x + ph.v.z * b.p.z) / (dd || 1); // speed toward the wall
+    if (vh <= 5) return false;
+    const toWall = (R - dd) / vh;
+    // already decided: make the catch when the ball reaches the glove at the top of the leap
+    const W = pl.wall;
+    if (W) {
+      if (W.catch && toWall <= dt * 1.2 + 0.02) {
+        const f = W.f; pl.fateDone = true; pl.robbed = W.hr;
+        this.flyCaught(f, true, { wall: true, rob: W.hr });
+        this.ball.p = { x: b.p.x, y: b.p.y, z: b.p.z };
+        return true;
+      }
+      return false;
+    }
+    if (toWall > 0.42 || toWall < 0) return false;
+    // where will it be at the wall, and how high?
+    const yW = b.p.y + ph.v.y * toWall - 16 * toWall * toWall;
+    const wx = Math.sin(phi) * (R - 1.2), wz = -Math.cos(phi) * (R - 1.2);
+    let f = null, fd = 1e9;
+    for (const o of Object.values(this.F)) { if (o.n < 7 || o.mode === 'throw') continue; const d = Math.hypot(o.p.x - wx, o.p.z - wz); if (d < fd) { fd = d; f = o; } }
+    pl.wall = { tried: true };
+    if (!f || fd > 9 + f.speed * toWall * 0.6) return false;
+    const reach = 11.2 + (f.fld - 60) / 45; // glove height at the top of a leap with a foot on the wall
+    if (yW < 7.5 || yW > reach + 1.5) return false;
+    const hr = yW > H;
+    let ok;
+    if (hr) ok = rand() < clamp(0.36 + (f.fld - 70) / 90 - Math.max(0, yW - H - 1.5) / 9 - Math.max(0, fd - 5) / 14, 0.04, 0.6);
+    else ok = yW <= reach && pl.fate === 'out';
+    if (yW > reach) ok = false;
+    f.mode = 'leap'; f.anim = Math.max(0, 0.4 - toWall); f.moving = false; f.vel = 0;
+    f.p.x = wx; f.p.z = wz; f.face = Math.atan2(wx, wz); f.tgt = null;
+    pl.wall = { tried: true, f, catch: ok, hr };
+    this.emit('leap', { n: f.n, hr, ok });
+    if (!ok && f === this.chaser) this.chaserLock = this.time + 0.8;
+    return false;
   }
   // earliest point on the predicted path this fielder can get to: {t, s}
   intercept(f) {
@@ -566,13 +610,13 @@ export class Engine {
     this.predictBall(); this.retarget();
     this.chaserLock = this.time + 0.6;
   }
-  flyCaught(f, dive) {
+  flyCaught(f, dive, extra = {}) {
     const pl = this.play; this.chaser = f; this.chaser2 = null;
     pl.caughtFly = true; pl.fair = true;
     this.markOut(this.runners.find(r => r.isBatter), 'fly');
     f.hasBall = true; this.ball = { state: 'held', holder: f, p: { ...f.p, y: 5 } };
-    f.holdT = dive ? 1.0 : 0.45;
-    this.emit('catch', { n: f.n, dive, fly: true });
+    f.holdT = extra.wall ? 1.25 : dive ? 1.0 : 0.45;
+    this.emit('catch', { n: f.n, dive, fly: true, ...extra });
     // runners must tag up: anyone who left early heads back
     for (const r of this.runners) {
       if (r.out || r.isBatter) continue;
@@ -802,7 +846,7 @@ export class Engine {
   // ---------- movement ----------
   moveActors(dt) {
     for (const f of Object.values(this.F)) {
-      if (f.mode === 'throw' || f.mode === 'dive') { f.anim += dt * (f.mode === 'dive' ? 1.2 : 2.2); if (f.anim >= 1) { f.mode = 'ready'; f.anim = 0; } continue; }
+      if (f.mode === 'throw' || f.mode === 'dive' || f.mode === 'leap') { f.anim += dt * (f.mode === 'dive' ? 1.2 : f.mode === 'leap' ? 1.05 : 2.2); if (f.anim >= 1) { f.mode = 'ready'; f.anim = 0; } continue; }
       const t = f.tgt;
       if (t) {
         const d = dist(f.p, t);
@@ -812,6 +856,8 @@ export class Engine {
           if (f.reactLeft == null && this.phase === 'live') f.reactLeft = f.react;
           if (f.reactLeft > 0) { f.reactLeft -= dt; continue; }
           const k = Math.min(1, lim / d); f.p.x += (t.x - f.p.x) * k; f.p.z += (t.z - f.p.z) * k; f.face = Math.atan2(t.x - f.p.x, t.z - f.p.z); f.moving = d > 1; f.vel = d > 1 ? lim / dt : 0;
+          // the warning track ends at the fence: never run into or through the wall
+          if (f.n >= 7 && -f.p.z > 0) { const ph = Math.atan2(f.p.x, -f.p.z); if (Math.abs(ph) < 0.8) { const R = this.park.wallR(ph) - 2.2, dd = Math.hypot(f.p.x, f.p.z); if (dd > R) { f.p.x *= R / dd; f.p.z *= R / dd; if (dist(f.p, t) > 1.5) { f.moving = false; f.vel = 0; } } } }
         } else { f.moving = false; f.vel = 0; }
       } else { f.moving = false; f.vel = 0; }
       if (!f.moving) { const bp = this.ball.p; f.face = Math.atan2(bp.x - f.p.x, bp.z - f.p.z); }

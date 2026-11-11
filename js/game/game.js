@@ -116,6 +116,7 @@ class LiveGame {
       else if (f.n === 2 && ph !== 'live' && ph !== 'dead') { pose = { mode: 'squat' }; a.root.rotation.y = Math.PI; a.root.position.set(0, 0, 3.4); }
       else if (f.mode === 'throw') { pose = { mode: 'throwOH', t: f.anim, snap: true }; a.root.rotation.y = f.face; }
       else if (f.mode === 'dive') { pose = { mode: 'layout' }; a.root.rotation.y = f.face; }
+      else if (f.mode === 'leap') { pose = { mode: 'wall', t: f.anim, snap: true }; a.root.rotation.y = f.face; }
       else {
         a.root.rotation.y = f.face;
         if (f.moving) pose = { mode: 'run', speed: (f.vel || 20) / FT };
@@ -156,6 +157,10 @@ class LiveGame {
     this.ump.root.position.x += (slot - this.ump.root.position.x) * Math.min(1, dt * 4);
     animate(this.ump, { mode: ['aim', 'windup', 'pitch', 'intro'].includes(E.phase) || (E.phase === 'post_pitch' && this.phoneL()) ? 'ump' : 'stand' }, dt);
     for (const a of this.actors.values()) if (!a.used) a.root.visible = false;
+    // catcher's-eye batting view: the camera sits where the catcher is, so he and the umpire are not drawn
+    const hideC = this.camMode === 'bat' && this.zoneCam() && !this.replay;
+    this.ump.root.visible = !hideC;
+    if (hideC) for (const f of Object.values(E.F)) if (f.n === 2) { const a = this.actors.get(f.pid + '|catcher|' + fs); if (a) a.root.visible = false; }
   }
   nearBase(r) { const B = [[63.64, -63.64], [0, -127.28], [-63.64, -63.64], [0, 0]]; let m = 1e9; for (const [x, z] of B) m = Math.min(m, Math.hypot(r.p.x - x, r.p.z - z)); return m; }
   // ---------- ball ----------
@@ -167,6 +172,7 @@ class LiveGame {
     } else if (E.phase === 'pitch') {
       const P = E.curPitch, u = E.pt / P.path.time, q = P.path.at(Math.min(u, 1.12));
       p = new THREE.Vector3(q.x, q.y, Math.min(q.z, 2.6));
+      if (this.camMode === 'bat' && this.zoneCam() && q.z > 1.6) p = null; // flies past the catcher's-eye camera
     } else if (E.ball && E.ball.p) {
       if (E.ball.state === 'held' && E.ball.holder) {
         const f = E.ball.holder, a = this.actors.get(f.pid + '|' + (f.n === 2 ? 'catcher' : 'field') + '|' + E.fieldingSide);
@@ -176,7 +182,7 @@ class LiveGame {
     }
     if (!p) { this.ballM.visible = false; this.ballShadow.visible = false; this.trail.visible = false; return; }
     this.ballM.visible = true; this.ballM.position.copy(p);
-    { const d = this.cam.position.distanceTo(p), px = d * Math.tan(this.cam.fov * Math.PI / 360) * 2 / (this.hud.H || 700); this.ballM.scale.setScalar(Math.max(1, px * 5 / 0.4)); }
+    { const d = this.cam.position.distanceTo(p), px = d * Math.tan(this.cam.fov * Math.PI / 360) * 2 / (this.hud.H || 700); this.ballM.scale.setScalar(Math.max(this.camMode === 'bat' && this.zoneCam() ? 0.62 : 1, px * 5 / 0.4)); }
     this.ballShadow.visible = p.y > 0.3; this.ballShadow.position.set(p.x, 0.07, p.z);
     // trail while the ball is flying
     const flying = E.phase === 'pitch' || (this.hrBall && !this.hrBall.done) || (E.ball && (E.ball.state === 'air' || E.ball.state === 'thrown'));
@@ -188,6 +194,7 @@ class LiveGame {
   // ---------- cameras ----------
   portrait() { return this.cam.aspect < 0.95; }
   // phone held sideways: wide and short screen with thumb buttons along the bottom corners
+  zoneCam() { return this.set.camera !== 'broadcast'; }
   phoneL() { return !!this.touch && this.cam.aspect >= 1.3 && (this.hud ? this.hud.H : innerHeight) < 560; }
   setCam(pos, look, fov, k = 1) {
     const c = this.cam;
@@ -198,10 +205,12 @@ class LiveGame {
   }
   camRig(name) {
     const P = this.portrait(), V = (x, y, z) => new THREE.Vector3(x, y, z);
-    const low = this.set.camera === 'low';
     switch (name) {
-      case 'bat': if (this.phoneL()) return low ? [V(0, 9.5, 16), V(0, 0.8, -12), 40] : [V(0, 11, 19), V(0, 0.5, -12), 38];
-        return P ? [V(0, low ? 13 : 16.5, low ? 26 : 33), V(0, 2.4, -40), 46] : low ? [V(0, 9.5, 16), V(0, 1.0, -12), 36] : [V(0, 11, 19.5), V(0, 0.8, -12), 34];
+      case 'bat':
+        // catcher's-eye view (default): from where the catcher's stomach would be, catcher + ump hidden, whole zone in frame
+        if (this.zoneCam()) return P ? [V(0, 3.2, 11.5), V(0, -3.4, -60), 58] : [V(0, 3.1, 9.3), V(0, -3.4, -60), this.phoneL() ? 34 : 35];
+        if (this.phoneL()) return [V(0, 11, 19), V(0, 0.5, -12), 38];
+        return P ? [V(0, 16.5, 33), V(0, 2.4, -40), 46] : [V(0, 11, 19.5), V(0, 0.8, -12), 34];
       case 'pitch': if (this.phoneL()) return [V(2.5, 8.5, -74), V(0, 2.4, 0), 13];
         return P ? [V(3.2, 11, -92), V(0, 2.4, 0), 32] : [V(3.4, 10.2, -82), V(0, 2.4, 0), 21];
       case 'intro': { const L = this.E.bat && this.E.bat.hand === 'L'; return [V(L ? -4 : 4, 5.6, -7.5), V(L ? 2.9 : -2.9, 4.6, 0), P ? 50 : 34]; }
@@ -399,7 +408,8 @@ class LiveGame {
         }
         case 'foul': Sound.crack(0.4); H.ticker('FOUL BALL'); this.excite = Math.max(this.excite, 0.15); break;
         case 'contact': { this.rec.start(); this.replayWant = null; const q = Math.min(1, ev.ev / 105); Sound.crack(q); this.excite = Math.max(this.excite, ev.ev > 95 && ev.la > 15 ? 0.6 : 0.3); break; }
-        case 'catch': Sound.glove(); if (ev.dive && ev.fly && !this.replayWant) this.replayWant = { kind: 'catch', at: { x: E.ball.p.x, z: E.ball.p.z }, t: this.rec.t, lefty: E.bat && E.bat.hand === 'L' }; if (ev.dive) H.banner(ev.fly ? 'WHAT A CATCH' : 'GREAT STOP', '', 'gold', 1400); break;
+        case 'catch': Sound.glove(); if (ev.dive && ev.fly && !this.replayWant) this.replayWant = { kind: 'catch', at: { x: E.ball.p.x, z: E.ball.p.z }, t: this.rec.t, lefty: E.bat && E.bat.hand === 'L' }; if (ev.rob) { H.banner('ROBBED!', 'HOME RUN TAKEN AWAY AT THE WALL', 'gold', 2200); this.excite = 1; } else if (ev.wall) H.banner('AT THE WALL', 'WHAT A CATCH', 'gold', 1600); else if (ev.dive) H.banner(ev.fly ? 'WHAT A CATCH' : 'GREAT STOP', '', 'gold', 1400); break;
+        case 'leap': this.excite = Math.max(this.excite, 0.7); break;
         case 'dive_miss': this.excite = Math.max(this.excite, 0.5); break;
         case 'wall': Sound.thud(); this.excite = Math.max(this.excite, 0.7); break;
         case 'error': H.banner('ERROR', '', 'red', 1300); break;
@@ -561,6 +571,7 @@ class LiveGame {
     if (E.isUser(fs) && ['aim', 'intro', 'pa_start', 'post_pitch'].includes(E.phase)) opts.push(['change', 'PITCHING CHANGE', `${DB.full(DB.player(E.pitcher()))} has thrown ${(E.st.pc[E.pitcher()] || 0) + (E.pitchesPA || 0)} pitches`]);
     opts.push(['sim', 'SIM TO END OF GAME', 'The computer plays the rest of this game']);
     opts.push(['zone', 'STRIKE ZONE: ' + (this.set.strikeZone ? 'ON' : 'OFF'), '']);
+    opts.push(['cam', 'BATTING CAMERA: ' + (this.zoneCam() ? 'CATCHER VIEW' : 'BROADCAST'), '']);
     opts.push(['pci', 'SWING AIM: ' + ({ timing: 'TIMING ONLY', assist: 'ASSISTED', manual: 'MANUAL' }[this.set.pci]), 'Timing only = just swing on time']);
     opts.push(['meter', 'PITCH METER: ' + (this.set.pitchMeter ? 'ON' : 'OFF'), '']);
     opts.push(['diff', 'DIFFICULTY: ' + this.set.diff.toUpperCase(), 'ROOKIE / PRO / ALL-STAR / LEGEND']);
@@ -571,6 +582,7 @@ class LiveGame {
     const act = k => {
       if (k === 'resume') close();
       if (k === 'zone') { this.set.strikeZone = !this.set.strikeZone; saveSettings(); close(); this.pause(); }
+      if (k === 'cam') { this.set.camera = this.zoneCam() ? 'broadcast' : 'zone'; saveSettings(); this.camCut = true; this.camMode = ''; close(); this.pause(); }
       if (k === 'meter') { this.set.pitchMeter = !this.set.pitchMeter; saveSettings(); close(); this.pause(); }
       if (k === 'pci') { const o = ['timing', 'assist', 'manual']; this.set.pci = o[(o.indexOf(this.set.pci) + 1) % 3]; saveSettings(); close(); this.pause(); }
       if (k === 'diff') { const o = ['rookie', 'pro', 'allstar', 'legend']; this.set.diff = o[(o.indexOf(this.set.diff) + 1) % 4]; saveSettings(); this.E.D = null; import('./engine.js').then(mm => { this.E.D = mm.DIFF[this.set.diff]; }); close(); this.pause(); }

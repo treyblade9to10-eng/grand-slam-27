@@ -11,12 +11,14 @@ export const Settings = Object.assign({
   gfx: 'auto',          // auto | high | fast
   sound: true, music: true,
   innings: 9,
-  camera: 'broadcast',  // broadcast | low
+  camera: 'zone',       // zone (catcher's-eye strike zone view, no catcher) | broadcast
   strikeZone: true,
   logos: 'real',        // real (MLB logos from MLB's CDN at runtime) | classic (our own badges)
   camFollow: true,
   replays: true,        // instant replays of homers and diving catches      // camera chases the ball after contact
 }, (() => { try { return JSON.parse(localStorage.getItem(PRE + 'settings') || '{}'); } catch (e) { return {}; } })());
+// v2.2: the batting camera became the catcher's-eye zone view - move everyone onto it once
+if (!Settings.cam2) { Settings.camera = 'zone'; Settings.cam2 = 1; try { localStorage.setItem(PRE + 'settings', JSON.stringify(Settings)); } catch (e) { } }
 export function saveSettings() { localStorage.setItem(PRE + 'settings', JSON.stringify(Settings)); }
 export function save(key, obj) {
   try { localStorage.setItem(PRE + key, 'z' + LZ().compressToUTF16(JSON.stringify(obj))); return true; }

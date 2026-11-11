@@ -748,19 +748,8 @@ function makeHumanAthlete(card, team, opts, look, U, h2, pantsStyle) {
     headgear: opts.mask ? 'catcher' : opts.head, patchCanvas: patch ? patch.image : null, chestLogo: U.chestLogo && team ? logoImg(team, 'cap') : null, sleeveEnd: isUmp ? 0.5 : 0.355,
   });
   if (patch) P.hm.body.material.userData.u.uPatch.value = patch;
-  // caps / helmets / masks sit on the head bone, re-centred on the human skull
-  const hg = new THREE.Group(); hg.position.set(0, -0.036, 0.026); hg.rotation.x = 0.2; hg.scale.setScalar(1.1); P.head.add(hg);
-  const mirror = !!opts.lefty;
-  hg.userData.capRoot = 1;
-  if (opts.head === 'cap') addCap(hg, team, U, 'cap', mirror);
-  else if (opts.head === 'helmet') { hg.position.y += 0.012; hg.position.z -= 0.006; hg.rotation.x = 0.1; addCap(hg, team, U, 'helmet', mirror); }
-  else if (opts.head === 'ump') addCap(hg, null, U, 'cap', mirror);
-  if (opts.head === 'catcher' || opts.mask) {
-    addCap(hg, team, U, 'skull', mirror);
-    const frame = new THREE.Mesh(maskGeo(), M(isUmp ? '#2a2a2a' : '#1d1f24', 0.35, { metalness: 0.6 })); frame.position.set(0, 0.01, 0); hg.add(frame);
-    for (const y of [0.2, 0.04]) { const pad = new THREE.Mesh(maskPadGeo(), M('#4a3628', 0.8)); pad.position.set(0, y, 0.004); pad.scale.set(1, 0.6, 1); hg.add(pad); }
-  }
-  hg.traverse(o => { if (o.isMesh && (o.parent.userData.cap || /brim|flap|helmet|dec/.test(o.geometry.userData.k || ''))) o.userData.noShadow = true; });
+  // caps / helmets / masks are fitted to the human skull and ride on its head bone
+  humanHeadgear(P, opts.head === 'ump' ? 'cap' : opts.head, (opts.head === 'catcher' || opts.mask), opts.head === 'ump' || isUmp ? null : team, U, !!opts.lefty, isUmp);
   if (opts.chestPad) {
     const padM = new THREE.MeshPhysicalMaterial({ color: opts.chestPad, roughness: 0.45, clearcoat: 0.5 });
     const pad = new THREE.Mesh(G('cpad3', () => { const b = new THREE.BoxGeometry(0.36, 0.5, 0.05, 10, 12, 1); const p = b.attributes.position; for (let i = 0; i < p.count; i++) { const x = p.getX(i), y = p.getY(i); const ey = Math.abs(y) / 0.25; let sx = 1; if (y < -0.08) sx = 1 - (-0.08 - y) * 1.1; p.setX(i, x * sx); p.setZ(i, p.getZ(i) - x * x * 2.2 + (1 - ey * ey) * 0.02 + Math.sin(y * 40) * 0.003); } b.computeVertexNormals(); return b; }), padM);
@@ -780,8 +769,137 @@ function makeHumanAthlete(card, team, opts, look, U, h2, pantsStyle) {
   root.scale.setScalar(look.h * FT * 0.985);
   root.traverse((o) => { if (o.isMesh) o.castShadow = !o.userData.noShadow; });
   P.anim = { phase: Math.random() * 6, t: 0 };
+  P.build = Math.max(0.92, Math.min(1.2, look.build || 1));
   P.sync();
   return P;
+}
+
+// ---------------- fitted headgear for the human head ----------------
+// Built in the body's bind pose (meters, y up, face toward +z) from the measured skull, then moved into the
+// head bone's space like the hair. Skull: centre (0, 1.705, -0.006), half sizes ~0.09 x 0.115 x 0.10.
+const HC = { y: 1.705, z: -0.006 };
+// shell = dome over the skull that turns into a straight wall below its equator, cut at band(a) (a = azimuth, 0 = front)
+function shellGeo2(key, rx, ry, rz, band, lift = 0, NA = 44, NP = 16) {
+  return G(key, () => {
+    const pos = [], uv = [], idx = [], prof = [];
+    for (let i = 0; i <= NA; i++) {
+      const a = -Math.PI + 2 * Math.PI * i / NA, sa = Math.sin(a), ca = Math.cos(a), by = band(a);
+      // raw profile: dome (phi 0..pi/2) then a vertical wall down to the band
+      prof.length = 0;
+      for (let k = 0; k <= 24; k++) { const ph = k / 24 * Math.PI / 2; prof.push([Math.pow(Math.sin(ph), 0.8), HC.y + ry * Math.pow(Math.cos(ph), 0.8)]); } // squared-off dome (fuller crown, flatter top)
+      prof.push([1, HC.y - 0.2]);
+      // clip at the band and measure arc length
+      const pts = [prof[0]]; let L = 0; const acc = [0];
+      for (let k = 1; k < prof.length; k++) {
+        const [r0, y0] = prof[k - 1]; let [r1, y1] = prof[k];
+        let stop = false; if (y1 <= by) { const t = (y0 - by) / (y0 - y1 || 1); r1 = r0 + (r1 - r0) * t; y1 = by; stop = true; }
+        L += Math.hypot((r1 - r0) * 0.1, y1 - y0); pts.push([r1, y1]); acc.push(L); if (stop) break;
+      }
+      for (let j = 0; j <= NP; j++) {
+        const want = L * j / NP; let k = 1; while (k < acc.length - 1 && acc[k] < want) k++;
+        const t = (want - acc[k - 1]) / (acc[k] - acc[k - 1] || 1), r = pts[k - 1][0] + (pts[k][0] - pts[k - 1][0]) * t;
+        let y = pts[k - 1][1] + (pts[k][1] - pts[k - 1][1]) * t;
+        const x = rx * r * sa, z = HC.z + rz * r * ca;
+        if (lift && ca > 0) y += lift * ca * Math.max(0, (y - by)) / (HC.y + ry - by); // structured front panels stand up a little
+        pos.push(x, y, z); uv.push(0.5 + a / (2 * Math.PI), 1 - j / NP); // canvas textures are flipped: v 1 = top
+      }
+    }
+    for (let i = 0; i < NA; i++) for (let j = 0; j < NP; j++) { const a = i * (NP + 1) + j, b = a + NP + 1; idx.push(a, a + 1, b, b, a + 1, b + 1); }
+    const g = new THREE.BufferGeometry(); g.setAttribute('position', new THREE.Float32BufferAttribute(pos, 3)); g.setAttribute('uv', new THREE.Float32BufferAttribute(uv, 2)); g.setIndex(idx); g.computeVertexNormals();
+    g.applyMatrix4(HUM.H.headInvBind); return g;
+  });
+}
+// brim: inner edge follows the shell's band across the front, curved down at the sides and pitched down
+function brimGeo2(key, rx, ry, rz, band, len, span = 1.16, pitch = 0.12, curve = 0.014) {
+  return G(key, () => {
+    const NS = 20, NT = 4, pos = [], uv = [], idx = [];
+    for (let i = 0; i <= NS; i++) {
+      const s = i / NS * 2 - 1, a = s * span, sa = Math.sin(a), ca = Math.cos(a), by = band(a);
+      // tuck the inner edge just inside the crown's edge so no gap shows between them
+      const c = by >= HC.y ? Math.pow(Math.min(1, (by - HC.y) / ry), 1.25) : 0, rr = Math.pow(Math.sqrt(1 - c * c), 0.8) * 0.965;
+      const ix = rx * rr * sa, iz = HC.z + rz * rr * ca, reach = len * Math.pow(Math.max(0, Math.cos(a * 1.22)), 0.75) + rz * (1 - rr) * ca;
+      for (let j = 0; j <= NT; j++) {
+        const t = j / NT, d = reach * t;
+        pos.push(ix + sa * d * 0.35, by + 0.003 - d * Math.sin(pitch) - curve * s * s * t, iz + ca * d * Math.cos(pitch) + (1 - Math.abs(s)) * 0.0); uv.push(i / NS, t);
+      }
+    }
+    for (let i = 0; i < NS; i++) for (let j = 0; j < NT; j++) { const a = i * (NT + 1) + j, b = a + NT + 1; idx.push(a, b, a + 1, b, b + 1, a + 1); }
+    const g = new THREE.BufferGeometry(); g.setAttribute('position', new THREE.Float32BufferAttribute(pos, 3)); g.setAttribute('uv', new THREE.Float32BufferAttribute(uv, 2)); g.setIndex(idx); g.computeVertexNormals();
+    g.applyMatrix4(HUM.H.headInvBind); return g;
+  });
+}
+// crown texture: panel seams, eyelets, front logo placed in the shell's uv space (u 0.5 = front, v 0 = top, 1 = band)
+function crownTex(key, color, team, mirror, logo, glossy) {
+  return canvasTex('hc' + key + color + (team ? team.id : '') + (mirror ? 'm' : ''), 512, 256, (x, W, H) => {
+    x.fillStyle = color; x.fillRect(0, 0, W, H);
+    if (!glossy) {
+      fabric(x, W, H, 0.05);
+      x.strokeStyle = 'rgba(0,0,0,.32)'; x.lineWidth = 2;
+      for (const u of [0.5 - 1 / 6, 0.5 + 1 / 6, 0.5 - 0.5 + 0.0001, 1, 0.5 - 1 / 3, 0.5 + 1 / 3]) { x.beginPath(); x.moveTo(u * W, 0); x.lineTo(u * W, H); x.stroke(); }
+      x.fillStyle = 'rgba(0,0,0,.45)'; for (const u of [0.5 - 1 / 12, 0.5 + 1 / 12, 0.25, 0.75, 1 / 12, 1 - 1 / 12]) { x.beginPath(); x.ellipse(u * W, H * 0.33, 2.2, 3.4, 0, 0, 7); x.fill(); }
+      // sweatband edge
+      x.fillStyle = 'rgba(0,0,0,.18)'; x.fillRect(0, H - 6, W, 6);
+    } else {
+      // helmet shine band + vent holes
+      const g = x.createLinearGradient(0, 0, 0, H); g.addColorStop(0, 'rgba(255,255,255,.10)'); g.addColorStop(0.5, 'rgba(255,255,255,0)'); g.addColorStop(1, 'rgba(0,0,0,.18)'); x.fillStyle = g; x.fillRect(0, 0, W, H);
+      x.fillStyle = 'rgba(0,0,0,.55)'; for (const u of [0.32, 0.68, 0.18, 0.82]) { x.beginPath(); x.ellipse(u * W, H * 0.3, 4, 6, 0, 0, 7); x.fill(); }
+    }
+    if (team && logo) {
+      const [vc, vh, uw] = logo; x.save(); x.translate(W / 2, vc * H); if (mirror) x.scale(-1, 1);
+      drawMark(x, team, 'cap', 0, 0, uw * W, vh * H, '#fff', '#000'); x.restore();
+    }
+  });
+}
+const CAP_BAND = (a) => { const f = (1 + Math.cos(a)) / 2; return 1.676 + 0.058 * Math.pow(f, 1.25); };
+const HEL_BAND = (a) => { const f = (1 + Math.cos(a)) / 2; return 1.64 + 0.122 * Math.pow(f, 2.4); };
+const HEL_FLAP = (a) => HEL_BAND(a) - 0.072 * sstep(0.62, 0.95, a) * (1 - sstep(1.85, 2.25, a)) * (0.75 + 0.25 * sstep(0.95, 1.6, a)); // rounded ear flap on the pitcher side (+x)
+const SKULL_BAND = (a) => { const f = (1 + Math.cos(a)) / 2; return 1.665 + 0.098 * Math.pow(f, 2); }; // catcher's skull cap, mask strap sits just under the front edge
+function humanHeadgear(P, kind, mask, team, U, mirror, isUmp) {
+  const head = P.hm.head, add = (m) => { m.castShadow = false; m.userData.noShadow = true; head.add(m); return m; };
+  if (kind === 'cap') {
+    const crown = globalThis.__capPlain ? null : crownTex('cap', U.cap, team, mirror, [0.66, 0.48, 0.12], false);
+    add(new THREE.Mesh(shellGeo2('hcap', 0.097, 0.116, 0.108, CAP_BAND, 0.008), new THREE.MeshStandardMaterial({ map: crown, roughness: 0.85, side: THREE.DoubleSide })));
+    const bc = U.capBrim || U.cap;
+    add(new THREE.Mesh(brimGeo2('hbrim', 0.097, 0.116, 0.108, CAP_BAND, 0.078), new THREE.MeshStandardMaterial({ color: bc, roughness: 0.8 })));
+    add(new THREE.Mesh(brimGeo2('hbrim', 0.097, 0.116, 0.108, CAP_BAND, 0.078), new THREE.MeshStandardMaterial({ color: shade(bc, 0.5), roughness: 0.9, side: THREE.BackSide })));
+    const bt = add(new THREE.Mesh(G('hcapbtn', () => { const g = new THREE.SphereGeometry(0.011, 10, 6, 0, Math.PI * 2, 0, Math.PI / 2); g.scale(1, 0.55, 1); g.translate(0, HC.y + 0.116 - 0.002, HC.z); g.applyMatrix4(HUM.H.headInvBind); return g; }), M(U.cap, 0.8)));
+    bt.castShadow = false;
+  } else if (kind === 'helmet') {
+    const crown = crownTex('hel', U.cap, team, mirror, [0.68, 0.36, 0.1], true);
+    const mat = new THREE.MeshPhysicalMaterial({ map: crown, roughness: 0.28, metalness: 0.05, clearcoat: 1, clearcoatRoughness: 0.08, side: THREE.DoubleSide });
+    add(new THREE.Mesh(shellGeo2('hhel', 0.108, 0.13, 0.118, HEL_FLAP, 0.004, 52, 18), mat));
+    add(new THREE.Mesh(brimGeo2('hhelbrim', 0.108, 0.13, 0.118, HEL_FLAP, 0.048, 0.95, 0.2, 0.01), new THREE.MeshPhysicalMaterial({ color: U.cap, roughness: 0.3, clearcoat: 1, side: THREE.DoubleSide })));
+  }
+  if (mask) {
+    if (kind !== 'helmet') add(new THREE.Mesh(shellGeo2('hskull', 0.104, 0.126, 0.114, SKULL_BAND, 0, 40, 14), new THREE.MeshPhysicalMaterial({ color: isUmp ? '#15171c' : U.cap, roughness: 0.3, clearcoat: 1, side: THREE.DoubleSide })));
+    add(new THREE.Mesh(maskGeo2(), M(isUmp ? '#2a2a2a' : '#1d1f24', 0.35, { metalness: 0.6 })));
+    add(new THREE.Mesh(maskPadGeo2(), M(isUmp ? '#2b2724' : '#3a2c22', 0.85)));
+  }
+}
+// catcher's / umpire's mask: steel cage in front of the face + padded frame, fitted to the human face (front of face z ~0.115)
+function maskGeo2() {
+  return G('hmask2', () => {
+    const parts = [], cz = 0.03;
+    for (const [y, r, arc] of [[1.785, 0.098, 2.5], [1.745, 0.112, 2.6], [1.695, 0.116, 2.6], [1.645, 0.11, 2.4], [1.598, 0.092, 2.0]]) {
+      const t = new THREE.TorusGeometry(r, 0.0034, 5, 28, arc); t.rotateX(Math.PI / 2); t.rotateY(arc / 2 - Math.PI / 2); t.translate(0, y, cz); parts.push(t);
+    }
+    for (const sx of [-0.036, 0, 0.036]) { const zf = cz + Math.sqrt(0.113 * 0.113 - sx * sx); const t = new THREE.CylinderGeometry(0.0038, 0.0038, 0.17, 5); t.rotateX(-0.12); t.translate(sx, 1.69, zf); parts.push(t); }
+    { const t = new THREE.CylinderGeometry(0.0032, 0.0032, 0.055, 5); t.rotateX(0.6); t.translate(0, 1.57, cz + 0.07); parts.push(t); } // throat guard
+    const g = THREE.mergeGeometries(parts.map(p => p.index ? p.toNonIndexed() : p)); g.applyMatrix4(HUM.H.headInvBind); return g;
+  });
+}
+function maskPadGeo2() {
+  return G('hmaskpad2', () => {
+    const parts = [], cz = 0.03;
+    for (const [y, r, arc, th] of [[1.778, 0.092, 2.2, 0.01], [1.6, 0.084, 1.8, 0.011]]) {
+      const t = new THREE.TorusGeometry(r, th, 6, 22, arc); t.rotateX(Math.PI / 2); t.rotateY(arc / 2 - Math.PI / 2); t.scale(1, 1.5, 1); t.translate(0, y, cz - 0.004); parts.push(t);
+    }
+    // cheek pads down each side of the frame
+    for (const sx of [-1, 1]) { const c = new THREE.CapsuleGeometry(0.011, 0.13, 3, 6); c.translate(sx * 0.098, 1.69, cz + 0.035); parts.push(c); }
+    // strap around the back of the head
+    { const t = new THREE.TorusGeometry(0.108, 0.006, 4, 30, Math.PI * 1.2); t.rotateX(Math.PI / 2); t.rotateY(Math.PI / 2 + Math.PI * 0.6 - Math.PI * 1.2 / 2 + Math.PI); t.translate(0, 1.70, -0.01); parts.push(t); }
+    const g = THREE.mergeGeometries(parts.map(p => p.index ? p.toNonIndexed() : p)); g.applyMatrix4(HUM.H.headInvBind); return g;
+  });
 }
 
 // ---------------- animation ----------------
@@ -826,6 +944,12 @@ export function animate(P, pose, dt) {
     T.shLx = mix(T.shLx, up, 0.85); T.shRx = mix(T.shRx, up, 0.85); T.shLz = 0.18; T.shRz = -0.18; T.elL = T.elR = -0.3;
   }
   if (m === 'jump') Object.assign(T, { hipLx: -1.0, hipRx: -0.35, knL: 1.5, knR: 0.7, shLx: -2.95, shRx: -2.95, shLz: 0.15, shRz: -0.15, elL: -0.15, elR: -0.15, spineX: 0.05, headX: -0.4, chestY: 0, pelvisY: 0, bodyY: 1.0 });
+  if (m === 'wall') { // outfielder at the fence: plant a foot on the wall, spring up, glove reaching over the top
+    const t = pose.t || 0, up = t < 0.38 ? sstep(0.05, 0.38, t) : 1 - sstep(0.55, 0.9, t), crouch = 1 - sstep(0, 0.12, t);
+    Object.assign(T, { hipLx: mix(-1.35, -0.55, crouch), knL: mix(1.5, 1.0, crouch), hipRx: mix(0.25, -0.5, crouch), knR: mix(0.35, 0.9, crouch), hipLz: 0.08, hipRz: -0.08,
+      spineX: mix(-0.12, 0.3, crouch), headX: mix(-0.55, -0.2, crouch), shLx: mix(-1.0, -3.05, up), shLz: 0.12, elL: -0.08, shRx: mix(-0.6, -2.7, up), shRz: -0.22, elR: -0.25, chestY: 0, pelvisY: 0,
+      bodyY: 0.98 + 0.62 * up - 0.18 * crouch });
+  }
   if (m === 'layout') Object.assign(T, { pelvisX: 1.38, bodyY: 0.4, hipLx: 0.3, hipRx: 0.1, knL: 0.7, knR: 0.25, shLx: -3.0, shRx: -3.0, shLz: 0.14, shRz: -0.14, elL: -0.05, elR: -0.05, spineX: -0.1, headX: -0.95, chestY: 0, pelvisY: 0 });
   if (m === 'down') Object.assign(T, { pelvisX: 1.5, bodyY: 0.15, hipLx: 0.1, hipRx: 0.05, knL: 0.35, knR: 0.15, shLx: -2.8, shRx: -2.6, shLz: 0.3, shRz: -0.2, elL: -0.3, elR: -0.2, spineX: 0, headX: -0.7, chestY: 0, pelvisY: 0 });
   if (m === 'cheer') {
@@ -839,7 +963,12 @@ export function animate(P, pose, dt) {
   // ---- baseball ----
   if (m === 'pitch') Object.assign(T, kf(KF_PITCH, pose.t || 0));
   if (m === 'throwOH') Object.assign(T, kf(KF_THROW, pose.t || 0));
-  if (m === 'swing' || m === 'stance' || m === 'bunt') Object.assign(T, kf(m === 'bunt' ? KF_BUNT : KF_SWING, m === 'stance' ? (pose.load || 0) * 0.25 : pose.t || 0));
+  if (m === 'swing' || m === 'stance' || m === 'bunt') {
+    const st = m === 'stance' ? (pose.load || 0) * 0.25 : pose.t || 0;
+    Object.assign(T, kf(m === 'bunt' ? KF_BUNT : KF_SWING, st));
+    // extra shoulder turn that goes with the bat path (keeps the front arm outside the chest)
+    T.chestY += kb(m === 'bunt' ? KB_BUNT : KB_SWING, st)[5] + (globalThis.__chestAdd || 0);
+  }
   if (m === 'set') Object.assign(T, KF_PITCH[0][1], { spineX: 0.08 + Math.sin(A.t * 1.3) * 0.01, hipLx: 0, hipRx: 0, pelvisY: 0, chestY: 0 });
   if (m === 'squat') Object.assign(T, { hipLx: -1.75, hipRx: -1.75, hipLz: 0.5, hipRz: -0.5, knL: 2.35, knR: 2.35, spineX: 0.35, headX: -0.3, shLx: -1.25, shLz: 0.2, elL: -0.35, shRx: -0.2, shRz: -0.25, elR: -1.2, bodyY: 0.47, chestY: 0, pelvisY: 0 });
   if (m === 'ump') Object.assign(T, { hipLx: -0.75, hipRx: -0.75, hipLz: 0.32, hipRz: -0.32, knL: 1.25, knR: 1.25, spineX: 0.55, headX: -0.5, shLx: -0.5, shRx: -0.5, shLz: 0.25, shRz: -0.25, elL: -0.7, elR: -0.7, chestY: 0, pelvisY: 0 });
@@ -851,6 +980,8 @@ export function animate(P, pose, dt) {
   if (m === 'point') Object.assign(T, { shRx: -2.6, shRz: -0.3, elR: -0.1, shLx: -0.2, elL: -0.4, chestY: 0, pelvisY: 0 });
 
   const k = pose.snap ? 1 : 1 - Math.exp(-dt * 18);
+  // undo last frame's arm de-clipping so it never feeds back into the smoothing
+  if (P._arm) { const a = P._arm; P.shL.rotation.set(a[0], a[1], a[2]); P.shR.rotation.set(a[3], a[4], a[5]); }
   const r = (o, ax, v) => { o.rotation[ax] += (v - o.rotation[ax]) * k; };
   r(P.hipL, 'x', T.hipLx); r(P.hipR, 'x', T.hipRx); r(P.hipL, 'z', T.hipLz); r(P.hipR, 'z', T.hipRz);
   r(P.knL, 'x', T.knL); r(P.knR, 'x', T.knR);
@@ -868,7 +999,87 @@ export function animate(P, pose, dt) {
   const y = T.bodyY ?? groundY;
   P.body.position.y += (y - P.body.position.y) * (T.bodyY != null ? k : 1);
   if (P.batPivot) batPose(P, pose);
+  if (P.hm) {
+    const a = P._arm || (P._arm = new Float32Array(6)), L = P.shL.rotation, R = P.shR.rotation;
+    a[0] = L.x; a[1] = L.y; a[2] = L.z; a[3] = R.x; a[4] = R.y; a[5] = R.z;
+    if (P.batPivot && P.batPivot.visible) { P._arm = null; } // IK arms are recomputed every frame
+    declipArms(P, !!(P.batPivot && P.batPivot.visible));
+  }
   if (P.sync) P.sync();
+}
+
+// ---- keep arms out of the body ----
+// The human mesh is broad through the chest and hips, so poses authored for the old thin rig pushed the arms into
+// the jersey. After posing, each arm is checked against the measured torso cross-sections (HUM.H.slices) and
+// swung outward from the shoulder until the elbow, forearm and hand clear the body. Arms on the bat (IK) keep the
+// hand on the handle and swing the elbow around the shoulder-hand line instead.
+const _dS = new THREE.Vector3(), _dE = new THREE.Vector3(), _dH = new THREE.Vector3(), _dT = new THREE.Vector3(), _dQ = new THREE.Quaternion(), _dA = new THREE.Vector3(), _dO = new THREE.Vector3();
+const _iC = new THREE.Matrix4(), _iP = new THREE.Matrix4(), _dPts = [0, 1, 2, 3, 4].map(() => new THREE.Vector3());
+function sliceAt(y) { const S = HUM.H.slices, k = Math.floor((y - S.Y0) / S.DY); return k < 0 || k >= S.length ? null : S[k]; }
+function armPen(P, side, pts) {
+  // pts are in driver space; returns total penetration depth (0 = clear) and fills the deepest point's outward dir
+  const J = HUM.J, b = P.build || 1;
+  let pen = 0, best = 0;
+  for (let i = 0; i < pts.length; i++) {
+    const w = pts[i];
+    // trunk above the waist follows the chest, the hips follow the pelvis
+    _dT.copy(w).applyMatrix4(_iC); _dT.x += J.chest[0]; _dT.y += J.chest[1]; _dT.z += J.chest[2];
+    if (_dT.y < 1.12) { _dT.copy(w).applyMatrix4(_iP); _dT.x += J.pelvis[0]; _dT.y += J.pelvis[1]; _dT.z += J.pelvis[2]; }
+    const sl = sliceAt(_dT.y); if (!sl) continue;
+    const rad = i < 2 ? 0.044 : 0.037; // upper arm / forearm + sleeve thickness
+    const rx = sl[0] * (0.95 + (b - 1) * 0.9) + 0.018 + rad, zc = (sl[1] + sl[2]) / 2, rz = (sl[2] - sl[1]) / 2 * (0.93 + (b - 1)) + 0.018 + rad;
+    const v = (_dT.x / rx) ** 2 + ((_dT.z - zc) / rz) ** 2;
+    if (v < 1) { const d = 1 - Math.sqrt(v); pen += d; if (d > best) { best = d; _dO.set(_dT.x, 0, _dT.z - zc); } }
+  }
+  return pen;
+}
+function armPoints(P, side, out) {
+  const sh = P['sh' + side], el = P['el' + side], hd = P['hand' + side];
+  _dS.setFromMatrixPosition(sh.matrixWorld); _dE.setFromMatrixPosition(el.matrixWorld); _dH.setFromMatrixPosition(hd.matrixWorld);
+  out[0].lerpVectors(_dS, _dE, 0.75); out[1].copy(_dE); out[2].lerpVectors(_dE, _dH, 0.5); out[3].copy(_dH);
+  out[4].copy(_dH).sub(_dE).multiplyScalar(0.35).add(_dH); // fingers / glove
+  return out;
+}
+function declipArms(P, ikMode) {
+  if (!HUM.H || !HUM.H.slices) return;
+  P.bones[0].parent.updateWorldMatrix(true, true); // driver rig only (the skinned human is synced afterwards)
+  _iC.copy(P.chest.matrixWorld).invert(); _iP.copy(P.body.matrixWorld).invert();
+  for (const side of ['L', 'R']) {
+    const sh = P['sh' + side];
+    let pen = armPen(P, side, armPoints(P, side, _dPts));
+    if (globalThis.__dcLog) globalThis.__dcLog.push([P.U && P.U.key, side, +pen.toFixed(3)]);
+    if (pen <= 0) continue;
+    if (ikMode) {
+      // swing the elbow around the shoulder->hand line: try both ways, keep the better one
+      _dS.setFromMatrixPosition(sh.matrixWorld); _dH.setFromMatrixPosition(P['hand' + side].matrixWorld);
+      _dA.copy(_dH).sub(_dS).transformDirection(_iC).normalize();
+      const q0 = sh.quaternion.clone(); let bestQ = q0.clone(), bestPen = pen;
+      for (const sg of [1, -1]) {
+        sh.quaternion.copy(q0);
+        for (let i = 0; i < 10; i++) {
+          _dQ.setFromAxisAngle(_dA, 0.12 * sg); sh.quaternion.premultiply(_dQ); sh.updateMatrixWorld(true);
+          const p2 = armPen(P, side, armPoints(P, side, _dPts));
+          if (p2 < bestPen - 1e-4) { bestPen = p2; bestQ.copy(sh.quaternion); }
+          if (p2 <= 0) break;
+        }
+      }
+      sh.quaternion.copy(bestQ); sh.updateMatrixWorld(true);
+      if (globalThis.__dcLog) globalThis.__dcLog.push(['ik-after', side, +bestPen.toFixed(3)]);
+      continue;
+    }
+    // swing the arm outward from the shoulder
+    for (let i = 0; i < 14 && pen > 0; i++) {
+      _dS.setFromMatrixPosition(sh.matrixWorld); _dS.applyMatrix4(_iC); // shoulder in chest space
+      // deepest point outward dir (_dO) was measured in body coords; it is a direction so frames agree up to the pelvis bend
+      _dO.normalize(); if (!isFinite(_dO.x)) _dO.set(side === 'L' ? 1 : -1, 0, 0);
+      _dT.copy(_dE).applyMatrix4(_iC).sub(_dS); // shoulder -> elbow (chest space)
+      if (_dT.lengthSq() < 1e-6) break;
+      _dA.crossVectors(_dT, _dO).normalize(); if (!isFinite(_dA.x)) break;
+      _dQ.setFromAxisAngle(_dA, 0.07); sh.quaternion.premultiply(_dQ); sh.updateMatrixWorld(true);
+      pen = armPen(P, side, armPoints(P, side, _dPts));
+    }
+    if (globalThis.__dcLog) globalThis.__dcLog.push(['after', side, +pen.toFixed(3)]);
+  }
 }
 
 // ---------------- portraits (card art) ----------------
@@ -946,19 +1157,20 @@ const KF_BUNT = [
   [1, { hipLx: -0.5, hipRx: -0.5, hipLz: 0.3, hipRz: -0.3, knL: 0.8, knR: 0.8, spineX: 0.35, pelvisY: 0.75, chestY: 0.55, headY: 0.3 }],
 ];
 // bat path: [t, psi (barrel yaw, 0 = over the plate, + toward pitcher), e (elevation), hands x, y, z] in root frame meters
-const KB_SWING = [
-  [0, -1.95, 0.82, -0.2, 1.36, 0.1],
-  [0.25, -2.1, 0.78, -0.24, 1.32, 0.06],
-  [0.4, -1.35, 0.25, -0.06, 1.12, 0.14],
-  [0.5, 0.0, 0.0, 0.06, 1.0, 0.34],
-  [0.62, 1.35, 0.15, 0.24, 1.08, 0.2],
-  [1, 2.7, 0.95, 0.02, 1.45, -0.12],
+// (6th value = extra shoulder turn; hands sit out in front of the chest so the front arm never passes through it)
+export const KB_SWING = [
+  [0, -1.95, 0.82, -0.12, 1.36, 0.28],
+  [0.25, -2.1, 0.78, -0.16, 1.32, 0.24],
+  [0.4, -1.35, 0.25, 0.1, 1.12, 0.32, -0.3],
+  [0.5, 0.0, 0.0, 0.22, 1.0, 0.52, -0.6],
+  [0.62, 1.35, 0.15, 0.4, 1.08, 0.32, -0.45],
+  [1, 2.7, 0.95, 0.1, 1.45, -0.12],
 ];
-const KB_BUNT = [[0, -1.95, 0.82, -0.2, 1.36, 0.1], [0.4, 0.15, 0.12, 0.05, 1.05, 0.38], [1, 0.15, 0.12, 0.05, 1.05, 0.38]];
+export const KB_BUNT = [[0, -1.95, 0.82, -0.12, 1.36, 0.28], [0.4, 0.15, 0.12, 0.21, 1.05, 0.56, -0.6], [1, 0.15, 0.12, 0.21, 1.05, 0.56, -0.6]];
 function kb(list, t) {
   let i = 0; while (i < list.length - 2 && t > list[i + 1][0]) i++;
   const a = list[i], b = list[i + 1], u = Math.max(0, Math.min(1, (t - a[0]) / (b[0] - a[0] || 1)));
-  return [1, 2, 3, 4, 5].map(j => mix(a[j], b[j], u));
+  return [1, 2, 3, 4, 5, 6].map(j => mix(a[j] || 0, b[j] || 0, u));
 }
 const _v = new THREE.Vector3(), _w = new THREE.Vector3(), _q = new THREE.Quaternion(), _h0 = new THREE.Vector3(), _bd = new THREE.Vector3();
 function batPose(P, pose) {

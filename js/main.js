@@ -176,7 +176,7 @@ register('settings', (el) => {
         optRow('TEAM LOGOS', [['real', 'REAL'], ['classic', 'CLASSIC']], Settings.logos, v => { set('logos', v); }),
         optRow('FOLLOW THE BALL', [[true, 'ON'], [false, 'OFF']], Settings.camFollow, v => set('camFollow', v === true || v === 'true')),
         optRow('REPLAYS', [[true, 'ON'], [false, 'OFF']], Settings.replays, v => set('replays', v === true || v === 'true')),
-        optRow('BATTING CAMERA', [['broadcast', 'BROADCAST'], ['low', 'CATCHER']], Settings.camera, v => set('camera', v)),
+        optRow('BATTING CAMERA', [['zone', 'CATCHER VIEW'], ['broadcast', 'BROADCAST']], Settings.camera, v => set('camera', v)),
         optRow('GRAPHICS', [['auto', 'AUTO'], ['high', 'HIGH'], ['fast', 'FAST']], Settings.gfx, v => set('gfx', v)),
         optRow('SOUND', [[true, 'ON'], [false, 'OFF']], Settings.sound, v => set('sound', v === true || v === 'true')),
         optRow('MUSIC', [[true, 'ON'], [false, 'OFF']], Settings.music, v => set('music', v === true || v === 'true')),
