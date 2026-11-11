@@ -947,14 +947,14 @@ const KF_BUNT = [
 ];
 // bat path: [t, psi (barrel yaw, 0 = over the plate, + toward pitcher), e (elevation), hands x, y, z] in root frame meters
 const KB_SWING = [
-  [0, -2.0, 1.05, -0.17, 1.42, 0.0],
-  [0.25, -2.15, 0.95, -0.2, 1.36, -0.04],
+  [0, -1.95, 0.82, -0.2, 1.36, 0.1],
+  [0.25, -2.1, 0.78, -0.24, 1.32, 0.06],
   [0.4, -1.35, 0.25, -0.06, 1.12, 0.14],
   [0.5, 0.0, 0.0, 0.06, 1.0, 0.34],
   [0.62, 1.35, 0.15, 0.24, 1.08, 0.2],
   [1, 2.7, 0.95, 0.02, 1.45, -0.12],
 ];
-const KB_BUNT = [[0, -2.0, 1.05, -0.17, 1.42, 0.0], [0.4, 0.15, 0.12, 0.05, 1.05, 0.38], [1, 0.15, 0.12, 0.05, 1.05, 0.38]];
+const KB_BUNT = [[0, -1.95, 0.82, -0.2, 1.36, 0.1], [0.4, 0.15, 0.12, 0.05, 1.05, 0.38], [1, 0.15, 0.12, 0.05, 1.05, 0.38]];
 function kb(list, t) {
   let i = 0; while (i < list.length - 2 && t > list[i + 1][0]) i++;
   const a = list[i], b = list[i + 1], u = Math.max(0, Math.min(1, (t - a[0]) / (b[0] - a[0] || 1)));
@@ -967,7 +967,7 @@ function batPose(P, pose) {
   if (m === 'swing') k = kb(KB_SWING, pose.t || 0);
   else if (m === 'stance') k = kb(KB_SWING, (pose.load || 0) * 0.25);
   else if (m === 'bunt') k = kb(KB_BUNT, pose.t || 0);
-  else { P.batPivot.visible = false; return; }
+  else { P.batPivot.visible = false; if (P.hm) P.hm.grip = null; return; }
   P.batPivot.visible = true;
   let [psi, e, hx, hy, hz] = k;
   if (m === 'swing' || m === 'bunt') { // aim the barrel at the pitch near contact (pose.dy meters, + = high; pose.dz = reach)
@@ -980,11 +980,25 @@ function batPose(P, pose) {
   P.batPivot.rotation.set(Math.PI / 2 - e, psi, 0);
   P.root.updateMatrixWorld(true);
   _bd.set(0, 1, 0).applyQuaternion(P.batPivot.quaternion);
+  if (P.hm) {
+    // real hands: fists around the handle, top (right) hand just above the bottom (left) hand
+    const g = P.hm.grip || (P.hm.grip = { d: new THREE.Vector3(), NL: new THREE.Vector3(), NR: new THREE.Vector3() });
+    g.d.copy(_bd);
+    g.NR.set(1, 0, 0).addScaledVector(_bd, -_bd.x); if (g.NR.lengthSq() < 0.05) g.NR.set(0, 0, 1).addScaledVector(_bd, -_bd.z); g.NR.normalize();
+    g.NL.copy(g.NR).negate();
+    const wrist = (gp, N, side, out) => { const o = HUM.H.gripOff[side]; _gf.crossVectors(_bd, N); return out.copy(gp).addScaledVector(_bd, -o.x).addScaledVector(N, -o.y).addScaledVector(_gf, -o.z); };
+    const gR = _v.copy(P.batPivot.position).addScaledVector(_bd, 0.14), gL = _w.copy(P.batPivot.position).addScaledVector(_bd, 0.055);
+    const wR = wrist(gR, g.NR, 'r', new THREE.Vector3()), wL = wrist(gL, g.NL, 'l', new THREE.Vector3());
+    ikArm(P, 'R', wR, BAT_POLE_R); ikArm(P, 'L', wL, BAT_POLE_L);
+    return;
+  }
   ikArm(P, 'R', _v.copy(P.batPivot.position).addScaledVector(_bd, 0.13));
   ikArm(P, 'L', _w.copy(P.batPivot.position).addScaledVector(_bd, 0.04));
 }
-// place a hand (side 'L'|'R') at a target given in flip-group space (meters)
-function ikArm(P, side, target) {
+const _gf = new THREE.Vector3(), _pole = new THREE.Vector3(), _o = new THREE.Vector3(), _u = new THREE.Vector3(), _wv = new THREE.Vector3(), _lx = new THREE.Vector3(), _ly = new THREE.Vector3(), _mb = new THREE.Matrix4();
+const BAT_POLE_R = new THREE.Vector3(-0.5, -1, -0.2), BAT_POLE_L = new THREE.Vector3(0.25, -1, 0.35);
+// place a hand (side 'L'|'R') at a target given in flip-group space (meters); pole = elbow direction hint (flip space)
+function ikArm(P, side, target, pole) {
   const sh = P['sh' + side], el = P['el' + side];
   const tw = P.flip.localToWorld(target.clone());
   const t = sh.parent.worldToLocal(tw).sub(sh.position);
@@ -992,9 +1006,23 @@ function ikArm(P, side, target) {
   const d = Math.min(t.length(), (u + f) * 0.995);
   const bend = Math.PI - Math.acos(Math.max(-1, Math.min(1, (u * u + f * f - d * d) / (2 * u * f))));
   el.rotation.set(-bend, 0, 0);
-  _h0.set(0, -u - f * Math.cos(bend), f * Math.sin(bend)).normalize();
-  _q.setFromUnitVectors(_h0, t.normalize());
-  sh.quaternion.copy(_q);
+  if (!pole) {
+    _h0.set(0, -u - f * Math.cos(bend), f * Math.sin(bend)).normalize();
+    _q.setFromUnitVectors(_h0, t.normalize());
+    sh.quaternion.copy(_q);
+    return;
+  }
+  // pole: convert the direction from flip space into the shoulder's parent space
+  _o.set(0, 0, 0); P.flip.localToWorld(_o); _pole.copy(pole); P.flip.localToWorld(_pole).sub(_o);
+  sh.parent.getWorldQuaternion(_q); _pole.applyQuaternion(_q.invert()).normalize();
+  const td = t.clone().normalize();
+  _pole.addScaledVector(td, -_pole.dot(td)); if (_pole.lengthSq() < 1e-6) _pole.set(0, -1, 0).addScaledVector(td, -td.y); _pole.normalize();
+  const a = Math.acos(Math.max(-1, Math.min(1, (u * u + d * d - f * f) / (2 * u * d)))); // shoulder angle
+  _u.copy(td).multiplyScalar(Math.cos(a)).addScaledVector(_pole, Math.sin(a)).normalize(); // upper arm dir
+  // forearm bends toward the target, perpendicular to the upper arm
+  _wv.copy(td).addScaledVector(_u, -td.dot(_u)); if (_wv.lengthSq() < 1e-8) _wv.copy(_pole).negate(); _wv.normalize();
+  _ly.copy(_u).negate(); _lx.crossVectors(_ly, _wv).normalize(); _wv.crossVectors(_lx, _ly).normalize();
+  _mb.makeBasis(_lx, _ly, _wv); sh.quaternion.setFromRotationMatrix(_mb);
 }
 
 // Real human body meshes are loaded once before a game starts (see human.js). Safe to call many times.

@@ -67,7 +67,30 @@ export async function loadHuman() {
   // curled fingers (a relaxed grip): rotate each finger joint about its local z
   const curl = {};
   for (const n of Object.keys(bones)) { const m = /^(index|middle|ring|pinky|thumb)_0([123])_([lr])$/.exec(n); if (!m) continue; const th = m[1] === 'thumb'; const amt = th ? (m[2] === '1' ? 0.0 : 0.35) : (m[2] === '1' ? 0.9 : m[2] === '2' ? 1.1 : 0.7); curl[n] = restLocal0(bones[n]).multiply(new THREE.Quaternion().setFromAxisAngle(CURLAX(CURLSIGN[m[3]]), amt)); }
-  H = { curl, tpl, bones, bodyMesh, eyes, browMesh, restQ, restLocal, skinImgs: [skinL, skinD], normal, hairT, eyeT, hair, skinCache: new Map(), headInvBind: headInv };
+  // full fist around a bat handle
+  const fist = {};
+  for (const n of Object.keys(bones)) { const m = /^(index|middle|ring|pinky|thumb)_0([123])_([lr])$/.exec(n); if (!m) continue; const th = m[1] === 'thumb'; const amt = th ? (m[2] === '1' ? 0.35 : 0.75) : (m[2] === '1' ? 1.35 : m[2] === '2' ? 1.45 : 1.0);
+    let ax = CURLAX(CURLSIGN[m[3]]);
+    if (th) { const ta = globalThis.__thumbAx || 'z-'; ax = new THREE.Vector3(ta[0] === 'x' ? 1 : 0, ta[0] === 'y' ? 1 : 0, ta[0] === 'z' ? 1 : 0).multiplyScalar(CURLSIGN[m[3]] * (ta[1] === '-' ? -1 : 1)); }
+    fist[n] = restLocal0(bones[n]).multiply(new THREE.Quaternion().setFromAxisAngle(ax, amt)); }
+  // measure each hand in the arms-down rest: knuckle line (pinky -> index), palm side (where the fingers curl to)
+  const grip = {}, gripOff = {};
+  for (const sd of ['l', 'r']) {
+    const wp = (n) => { const v = new THREE.Vector3(); bones[n].getWorldPosition(v); return v; };
+    const hand = wp('hand_' + sd), K = wp('index_01_' + sd).sub(wp('pinky_01_' + sd)).normalize();
+    const tip0 = wp('middle_04_leaf_' + sd);
+    const F = tip0.clone().sub(hand).normalize();
+    const keep = ['middle_01_', 'middle_02_', 'middle_03_'].map(n => [bones[n + sd], bones[n + sd].quaternion.clone()]);
+    for (const [b] of keep) b.quaternion.copy(fist[b.name]); tpl.updateMatrixWorld(true);
+    const N = wp('middle_04_leaf_' + sd).sub(tip0);
+    const C = wp('middle_01_' + sd).add(wp('middle_03_' + sd)).multiplyScalar(0.5); // the hole in the fist
+    for (const [b, q0] of keep) b.quaternion.copy(q0); tpl.updateMatrixWorld(true);
+    N.addScaledVector(K, -N.dot(K)).normalize();
+    const X = new THREE.Vector3().crossVectors(K, N);
+    const o = C.sub(hand); gripOff[sd] = new THREE.Vector3(o.dot(K), o.dot(N), o.dot(X));
+    grip[sd] = new THREE.Matrix4().makeBasis(K, N, X).transpose(); // inverse of the rest basis
+  }
+  H = { grip, gripOff, fist, curl, tpl, bones, bodyMesh, eyes, browMesh, restQ, restLocal, skinImgs: [skinL, skinD], normal, hairT, eyeT, hair, skinCache: new Map(), headInvBind: headInv };
   return H;
 }
 
@@ -127,7 +150,7 @@ function uniformMaterial(skinIdx, U, opt) {
             // flatten the superhero traps
             p.y -= 0.022 * smoothstep(0.05, 0.12, ax) * (1.0 - smoothstep(0.17, 0.22, ax)) * smoothstep(1.47, 1.53, y);
           }
-          if (ax >= 0.18 && y > 1.28) { vec3 axis = vec3(p.x, 1.455, -0.068); vec3 d = p - axis; p = axis + d * mix(1.0, 0.76, smoothstep(0.18, 0.26, ax)); }
+          if (ax >= 0.13 && y > 1.28) { vec3 axis = vec3(p.x, 1.44, -0.068); vec3 d = p - axis; p = axis + d * mix(1.0, 0.8, smoothstep(0.14, 0.22, ax)); }
           // body build: heavier players are wider through the trunk and thighs
           float bw = (uBuild - 1.0) * (smoothstep(0.55, 0.85, y) * (1.0 - smoothstep(1.35, 1.5, y))) * (1.0 - smoothstep(0.2, 0.3, ax));
           p.x += p.x * bw * 0.9; p.z += (p.z + 0.02) * bw * 1.1 * smoothstep(0.95, 1.15, y);
@@ -283,7 +306,7 @@ export function syncHuman(P) {
       w.multiplyQuaternions(dq[di], H.restQ[b.name]);
       if (parentRel) b.quaternion.copy(_pq.copy(parentRel).invert().multiply(w)); else b.quaternion.copy(w);
     } else {
-      b.quaternion.copy(H.curl[b.name] || H.restLocal[b.name]);
+      b.quaternion.copy(((hm.grip || globalThis.__fistAll) && H.fist[b.name]) || H.curl[b.name] || H.restLocal[b.name]);
       if (parentRel) w.multiplyQuaternions(parentRel, b.quaternion); else w.copy(b.quaternion);
     }
     if (b.name === 'pelvis') {
@@ -292,4 +315,16 @@ export function syncHuman(P) {
       if (parentRel) b.position.applyQuaternion(_pq.copy(parentRel).invert());
     }
   }
+  // batting grip: turn each hand so the fist wraps the handle (knuckle line along the bat)
+  const g = hm.grip;
+  if (g) for (const [side, N, s] of [['l', g.NL, -1], ['r', g.NR, 1]]) {
+    const hb = hm.bones['hand_' + side]; if (!hb) continue;
+    // rest basis (arms-down rest): knuckle line +z, palm normal (-x left, +x right), finger dir -y
+    _X1.crossVectors(g.d, N);
+    _m1.makeBasis(g.d, N, _X1).multiply(H.grip[side]);
+    _tq.setFromRotationMatrix(_m1).multiply(H.restQ[hb.name]);
+    const pr = rel.get(hb.parent);
+    hb.quaternion.copy(_pq.copy(pr).invert().multiply(_tq));
+  }
 }
+const _K0 = new THREE.Vector3(), _N0 = new THREE.Vector3(), _X0 = new THREE.Vector3(), _X1 = new THREE.Vector3(), _m0 = new THREE.Matrix4(), _m1 = new THREE.Matrix4();
