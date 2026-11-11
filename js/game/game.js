@@ -323,6 +323,9 @@ class LiveGame {
     if (!this.running) return;
     requestAnimationFrame(this.loop);
     let dt = Math.min(0.05, (now - this.last) / 1000); this.last = now; if (FIXED) dt = FIXED; this.t += dt;
+    // phones fire 'resize' before a rotation finishes - re-check the real size every frame
+    if (this.stage.resize()) this.camCut = true;
+    this.hud.resize();
     // phones: the game only runs held sideways - hold everything while the phone is upright
     const needRot = this.touch && innerHeight > innerWidth * 1.05;
     if (needRot !== this.rotOn) { this.rotOn = needRot; this.rotEl.classList.toggle('on', needRot); this.root.classList.toggle('rotwait', needRot); if (needRot) Sound.excite(0); }

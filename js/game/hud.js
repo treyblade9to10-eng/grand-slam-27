@@ -27,7 +27,7 @@ export class HUD {
     this.cardEl = null; this.btnKey = ''; this.hintKey = ''; this.pitchKey = '';
     this.resize(); this._rs = () => this.resize(); addEventListener('resize', this._rs);
   }
-  resize() { const r = this.root.getBoundingClientRect(), d = Math.min(2, devicePixelRatio || 1); this.zc.width = r.width * d; this.zc.height = r.height * d; this.dpr = d; this.W = r.width; this.H = r.height; }
+  resize() { const r = this.root.getBoundingClientRect(), d = Math.min(2, devicePixelRatio || 1); if (r.width === this.W && r.height === this.H && d === this.dpr) return; this.bugKey = null; this.zc.width = r.width * d; this.zc.height = r.height * d; this.dpr = d; this.W = r.width; this.H = r.height; }
   dispose() { removeEventListener('resize', this._rs); this.root.remove(); }
   // ---------- scorebug ----------
   drawBug() {

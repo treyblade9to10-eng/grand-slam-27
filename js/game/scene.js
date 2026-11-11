@@ -57,9 +57,14 @@ export function makeStage(container, parkId, pk, team, time) {
   park.setTime(time, scene);
   park.crowd.setLight(time === 'night' ? 0.85 : time === 'dusk' ? 0.8 : 1);
   const camera = new THREE.PerspectiveCamera(45, 1, 0.5, 12000);
+  let lastW = 0, lastH = 0, lastDpr = 0;
   const resize = () => {
-    const w = container.clientWidth || innerWidth, h = container.clientHeight || innerHeight;
-    renderer.setSize(w, h, false); camera.aspect = w / h; camera.updateProjectionMatrix();
+    const w = container.clientWidth || innerWidth, h = container.clientHeight || innerHeight, dpr = Math.min(window.devicePixelRatio || 1, fast ? 1.5 : 2);
+    const cv = renderer.domElement;
+    if (w === lastW && h === lastH && dpr === lastDpr && cv.width === Math.floor(w * dpr) && Math.abs(camera.aspect - w / h) < 1e-3) return false;
+    lastW = w; lastH = h; lastDpr = dpr;
+    renderer.setPixelRatio(dpr); renderer.setSize(w, h, false); camera.aspect = w / h; camera.updateProjectionMatrix();
+    return true;
   };
   resize(); window.addEventListener('resize', resize);
   return {

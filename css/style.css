@@ -85,3 +85,32 @@ table.t td.n,table.t th.n{text-align:right;font-variant-numeric:tabular-nums}
 .key{display:inline-block;min-width:28px;text-align:center;background:#252e3c;border:1px solid #3a4558;border-bottom-width:3px;border-radius:4px;padding:2px 7px;font:800 14px 'Barlow Condensed';letter-spacing:.4px}
 .key.pa{border-radius:50%;min-width:26px;padding:2px 0;color:#111}
 .key.pa.a{background:#3fbf6a}.key.pa.b{background:#e5484d}.key.pa.x{background:#4aa8ff}.key.pa.y{background:#f2c14e}
+/* ---- phone held sideways: compact menus so everything fits a ~390px-tall screen ---- */
+@media (orientation:landscape) and (max-height:500px){
+  .top .in{padding:6px max(14px,env(safe-area-inset-right)) 6px max(14px,env(safe-area-inset-left))}
+  .brand{font-size:20px}
+  .wrapc{padding:10px max(14px,env(safe-area-inset-right)) 70px max(14px,env(safe-area-inset-left))}
+  h1{font-size:28px}h2{font-size:22px}
+  .title .in{padding:14px max(20px,env(safe-area-inset-left));max-width:none;gap:6px;justify-content:flex-start}
+  .logo27{font-size:34px;display:flex;align-items:baseline;gap:10px}
+  .logo27 .mlb{font-size:20px;margin:0}
+  .logo27 .gs{display:inline}
+  .logo27 .n{font-size:40px}
+  .title .in>.muted{font-size:12px!important}
+  .menu{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:6px;margin-top:6px;max-width:640px}
+  .menu .opt{padding:8px 12px;font-size:19px}
+  .menu .opt small{font-size:11px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+  .vs{gap:10px}
+  .vs .side{flex-direction:row;flex-wrap:wrap;justify-content:center;padding:8px 10px;gap:4px 10px}
+  .vs .side .pill{position:absolute;top:4px;left:6px;font-size:10px;padding:1px 5px}
+  .vs .side canvas.badge{width:46px!important;height:46px!important}
+  .vs .side .nm{font-size:19px}
+  .vs .side .nm br{display:none}
+  .vs .side .muted{width:100%;text-align:center;font-size:12px!important}
+  .vs .mid{font-size:24px}
+  .panel{padding:10px 12px}
+  .seg button{padding:7px 10px;font-size:14px}
+  .playbar{position:sticky;bottom:0;z-index:15;margin:0!important;padding:8px 0 max(8px,env(safe-area-inset-bottom));background:linear-gradient(transparent,var(--bg) 35%)}
+  .playbar .btn{font-size:22px!important;padding:10px 34px!important}
+  .tgrid{grid-template-columns:repeat(auto-fill,minmax(72px,1fr));gap:6px}
+}

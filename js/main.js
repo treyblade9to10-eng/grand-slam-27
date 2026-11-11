@@ -59,7 +59,7 @@ function sideCard(id, label) {
   const t = DB.team(id), ovr = DB.teamOvr(id), d = DB.DEPTH[id];
   const sp = d && DB.player(d.rotation[0]);
   return h('div', { class: 'side', style: `border-top:4px solid ${t.c1}` },
-    h('span', { class: 'pill' }, label), badge(t, 84), h('div', { class: 'nm' }, t.city, h('br'), t.name),
+    h('span', { class: 'pill' }, label), badge(t, 84), h('div', { class: 'nm' }, t.city, ' ', h('br'), t.name),
     h('div', { class: 'muted cond', style: 'font:800 16px Barlow Condensed' }, 'TEAM OVR ' + ovr + (sp ? '  /  SP ' + DB.nm(sp) : '')));
 }
 register('play', (el, args) => {
@@ -82,7 +82,7 @@ register('play', (el, args) => {
           return s;
         })()),
         h('div', { class: 'muted', style: 'font-size:13px' }, `${pk.name} - ${pk.city}. LF ${pk.dims[0]}  CF ${pk.dims[3]}  RF ${pk.dims[6]}. ${pk.roof === 'dome' ? 'Dome.' : pk.roof === 'retractable' ? 'Retractable roof.' : 'Open air.'}`)),
-      h('div', { class: 'row', style: 'margin:16px 0;justify-content:center' },
+      h('div', { class: 'row playbar', style: 'margin:16px 0;justify-content:center' },
         h('button', { class: 'btn', style: 'font-size:26px;padding:14px 40px', onclick: startQuick }, 'PLAY BALL')),
       h('h3', { style: 'margin:18px 0 8px' }, 'AWAY'), teamPicker(QP.away, id => { if (id === QP.home) QP.home = QP.away; QP.away = id; draw(); }),
       h('h3', { style: 'margin:18px 0 8px' }, 'HOME'), teamPicker(QP.home, id => { if (id === QP.away) QP.away = QP.home; QP.home = id; QP.park = null; draw(); }),
