@@ -1,6 +1,6 @@
 // Season hub POSTSEASON (bracket) + AWARDS / champion tabs
 import * as DB from '../db.js';
-import { h, badge, fmt3, fmtERA, ipStr } from '../ui.js';
+import { h, badge, fmt3, fmtERA, ipStr, tv } from '../ui.js';
 import * as SE from './season.js';
 import * as PO from './playoffs.js';
 import { bline, pline } from './stats.js';
@@ -30,10 +30,10 @@ export function postTab(ctx) {
   if (!P.done) {
     if (mine) out.append(postGameCard(ctx, mine));
     else out.append(h('div', { class: 'panel' }, h('h3', {}, PO.ROUNDS[P.round]),
-      h('div', { class: 'muted', style: 'font-size:14px;margin:4px 0 10px' }, PO.seedOf(P, S.team) ? 'Your club has been eliminated.' : 'Your club missed the postseason.'),
+      h('div', { class: 'muted', style: 'font-size:14px;margin:4px 0 10px' }, !PO.seedOf(P, S.team) ? 'Your club missed the postseason.' : P.series.some(x => x.win && x.win !== S.team && (x.hi === S.team || x.lo === S.team)) ? 'Your club has been eliminated.' : P.series.some(x => x.win === S.team) ? 'Your club moved on. Sim ahead to the next round.' : 'Your club has a first-round bye. Sim ahead to the Division Series.'),
       h('div', { class: 'row' }, h('button', { class: 'btn', onclick: () => postSim(ctx, 'day') }, 'SIM DAY'), h('button', { class: 'btn ghost', onclick: () => postSim(ctx, 'round') }, 'SIM ROUND'),
         h('button', { class: 'btn ghost', onclick: () => postSim(ctx, 'all') }, 'SIM TO CHAMPION'))));
-  } else out.append(h('div', { class: 'panel sn-champ' }, badge(DB.team(S.champ), 80), h('div', { class: 'yr' }, `${S.year} WORLD SERIES CHAMPIONS`), h('div', { class: 'big' }, DB.teamName(DB.team(S.champ))),
+  } else out.append(h('div', { class: 'panel sn-champ', ...tv(DB.team(S.champ)) }, badge(DB.team(S.champ), 80), h('div', { class: 'yr' }, `${S.year} WORLD SERIES CHAMPIONS`), h('div', { class: 'big' }, DB.teamName(DB.team(S.champ))),
     h('button', { class: 'btn', onclick: () => ctx.go('champ') }, 'AWARDS + NEXT SEASON')));
   const col = (title, cards) => h('div', {}, h('h3', { style: 'margin-bottom:8px;font-size:18px' }, title), ...cards);
   const brk = h('div', { class: 'sn-brk' });
@@ -52,7 +52,7 @@ export function champTab(ctx) {
   if (!S.champ) { out.append(h('div', { class: 'panel muted' }, 'Awards are handed out after the World Series.')); return out; }
   const ws = S.post.series.find(s => s.id === 'WS'), loser = ws.win === ws.hi ? ws.lo : ws.hi, wl = [Math.max(...ws.w), Math.min(...ws.w)];
   const mine = S.champ === S.team;
-  out.append(h('div', { class: 'panel sn-champ', style: `border-top-color:${DB.team(S.champ).c1}` },
+  out.append(h('div', { class: 'panel sn-champ', ...tv(DB.team(S.champ)) },
     h('div', { class: 'yr' }, `${S.year} WORLD SERIES CHAMPIONS`), badge(DB.team(S.champ), 130),
     h('div', { class: 'big' }, DB.teamName(DB.team(S.champ))),
     h('div', { class: 'muted' }, `Beat the ${DB.team(loser).name} ${wl[0]}-${wl[1]}`),

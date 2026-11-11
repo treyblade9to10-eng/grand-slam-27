@@ -1,7 +1,7 @@
 // Season mode screens: save slots, new season setup, season hub (HOME tab + play / sim actions).
 // Routes: #/season  |  #/season/new/<slot>  |  #/season/hub/<slot>/<tab>
 import * as DB from '../db.js';
-import { h, badge, toast, modal, fmtERA, ord } from '../ui.js';
+import { h, badge, toast, modal, fmtERA, ord, tv, teamBanner, teamRatings, ratingBars, divisionGrid, navFocus } from '../ui.js';
 import { Settings } from '../store.js';
 import { simGame } from '../sim/simgame.js';
 import * as SE from './season.js';
@@ -33,28 +33,28 @@ export function seasonView(el, args = []) {
 
 // ---------------- save slots ----------------
 function slotsView(el) {
-  const wrap = h('div', { class: 'wrapc' }, h('h1', {}, 'SEASON'), h('div', { class: 'sub' }, 'Three save slots. Pick a club, play or sim every game, and chase a ring in October.'));
-  const list = h('div', { class: 'grid' });
+  const wrap = h('div', { class: 'wrapc sn' }, h('div', { class: 'sn-title' }, h('h1', {}, 'SEASON'), h('div', { class: 'sub' }, 'Three save slots. Pick a club, play or sim every game, and chase a ring in October.')));
+  const list = h('div', { class: 'sn-slots' });
   for (const slot of [1, 2, 3]) {
     const S = SE.hasSeason(slot) ? SE.loadSeason(slot) : null;
     if (!S) {
-      list.append(h('div', { class: 'panel sn-slot' }, h('div', { class: 'gr' }, h('h3', {}, 'SLOT ' + slot), h('div', { class: 'muted' }, 'Empty')),
+      list.append(h('div', { class: 'sn-slot empty' }, h('div', { class: 'sl' }, 'SLOT ' + slot), h('div', { class: 'gr' }, h('div', { class: 'e1' }, 'EMPTY SLOT'), h('div', { class: 'e2' }, 'Start a new franchise season')),
         h('button', { class: 'btn', onclick: () => go('season/new/' + slot) }, 'NEW SEASON')));
       continue;
     }
     const t = DB.team(S.team), st = standings(S).find(s => s.id === S.team);
-    const status = S.champ ? `${S.champ === S.team ? 'WORLD SERIES CHAMPIONS' : 'Season complete - ' + S.champ + ' won it all'}`
-      : S.post ? 'Postseason' : `Game ${Math.min(S.len, st.g + 1)} of ${S.len}`;
-    list.append(h('div', { class: 'panel sn-slot', style: `border-left:4px solid ${t.c1}` }, badge(t, 54),
-      h('div', { class: 'gr' }, h('div', { class: 'pill' }, 'SLOT ' + slot), h('h3', { style: 'margin-top:3px' }, `${S.year} ${t.city} ${t.name}`),
-        h('div', { class: 'muted', style: 'font-size:14px' }, `${st.w}-${st.l}  ·  ${status}`)),
-      h('div', { class: 'row' },
+    const status = S.champ ? `${S.champ === S.team ? 'WORLD SERIES CHAMPIONS' : 'SEASON COMPLETE  ·  ' + S.champ + ' WON IT ALL'}`
+      : S.post ? 'POSTSEASON' : `GAME ${Math.min(S.len, st.g + 1)} OF ${S.len}`;
+    list.append(h('div', { class: 'sn-slot' },
+      teamBanner(t, h('div', { class: 'rk' }, h('b', {}, `${st.w}-${st.l}`), h('span', {}, `${S.year}  ·  ${status}`))),
+      h('div', { class: 'sl' }, 'SLOT ' + slot),
+      h('div', { class: 'acts' },
         h('button', { class: 'btn', onclick: () => go(`season/hub/${slot}/home`) }, 'CONTINUE'),
         h('button', { class: 'btn ghost small', onclick: () => confirmBox('DELETE SAVE', `Delete the ${S.year} ${t.name} season in slot ${slot}? This can't be undone.`, 'DELETE', () => { SE.deleteSeason(slot); if (CUR && CUR.slot === slot) CUR = null; slotsView((el.innerHTML = '', el)); }, 'red') }, 'DELETE'))));
   }
   wrap.append(list);
   el.append(topBar('SEASON', ''), wrap);
-  setTimeout(() => el.querySelector('.btn')?.classList.add('focus'), 40);
+  setTimeout(() => navFocus(el.querySelector('.sn-slots .btn')), 40);
 }
 
 // ---------------- new season ----------------
@@ -62,22 +62,24 @@ const NEW = { team: null, len: 162 };
 function newView(el, slot) {
   const draw = () => {
     el.innerHTML = '';
-    const wrap = h('div', { class: 'wrapc' }, h('h1', {}, 'NEW SEASON'), h('div', { class: 'sub' }, `Slot ${slot}  ·  Difficulty ${Settings.diff.toUpperCase()} (change it in Settings)`));
+    const wrap = h('div', { class: 'wrapc sn' });
     const sel = NEW.team && DB.team(NEW.team);
+    let top;
     if (sel) {
       const d = DB.DEPTH[sel.id], ace = DB.player(d.rotation[0]);
       const bat = d.lineup.map(([pid]) => DB.player(pid)).sort((a, b) => b.ovr - a.ovr)[0];
-      wrap.append(h('div', { class: 'panel', style: `border-top:4px solid ${sel.c1};display:flex;gap:14px;align-items:center;margin-bottom:12px` }, badge(sel, 72),
-        h('div', { style: 'flex:1' }, h('h2', {}, sel.city + ' ' + sel.name), h('div', { class: 'muted', style: 'font-size:14px' }, `${sel.lg} ${sel.div}  ·  Team OVR ${DB.teamOvr(sel.id)}`),
-          h('div', { style: 'font-size:14px;margin-top:4px' }, `Best bat: ${DB.full(bat)} (${bat.ovr})  ·  Ace: ${DB.full(ace)} (${ace.ovr})`))));
-    }
-    wrap.append(h('div', { class: 'panel grid', style: 'gap:12px;margin-bottom:12px' },
-      optRow('SEASON LENGTH', SE.LENS.map(n => [n, n + ' G']), NEW.len, v => { NEW.len = +v; draw(); }),
-      h('div', { class: 'muted', style: 'font-size:13px;margin-top:-6px' }, NEW.len === 162 ? 'The full real season. Sim it in seconds or play every game.' : NEW.len === 81 ? 'Half a season.' : NEW.len === 52 ? 'About a third of a season.' : 'A quick sprint to October.'),
-      h('div', { class: 'row', style: 'justify-content:center' }, h('button', { class: 'btn', style: 'font-size:24px;padding:12px 34px', ...(sel ? {} : { disabled: '' }), onclick: start }, sel ? 'START SEASON' : 'PICK A CLUB'))));
-    wrap.append(h('h3', { style: 'margin:6px 0 8px' }, 'PICK YOUR CLUB'),
-      h('div', { class: 'tgrid' }, DB.TEAMS.slice().sort((a, b) => a.city.localeCompare(b.city) || a.name.localeCompare(b.name)).map(t =>
-        h('button', { class: 'tbtn' + (t.id === NEW.team ? ' on' : ''), onclick: () => { NEW.team = t.id; draw(); el.scrollTop = 0; } }, badge(t, 44), t.id, h('span', { class: 'muted', style: 'font-size:12px;font-style:normal' }, 'OVR ' + DB.teamOvr(t.id))))));
+      const r = teamRatings(sel.id);
+      top = teamBanner(sel, h('div', { class: 'qp-card-meta' }, h('span', { class: 'ovr' }, h('small', {}, 'OVR'), String(r.ovr)), ratingBars(r)),
+        h('div', { class: 'keys' }, h('div', {}, h('small', {}, 'BEST BAT'), DB.full(bat), h('b', {}, String(bat.ovr))), h('div', {}, h('small', {}, 'ACE'), DB.full(ace), h('b', {}, String(ace.ovr))), h('div', {}, h('small', {}, 'DIVISION'), `${sel.lg} ${sel.div}`)));
+    } else top = h('div', { class: 'sn-pickhint' }, h('div', { class: 'e1' }, 'PICK YOUR CLUB'), h('div', { class: 'e2' }, 'Tap any club below. All 30 have their real rosters and ballparks.'));
+    wrap.append(h('div', { class: 'sn-newtop' }, top,
+      h('div', { class: 'sn-newopts' },
+        h('div', { class: 'lbl' }, `SLOT ${slot}  ·  ${Settings.diff.toUpperCase()} DIFFICULTY`),
+        optRow('LENGTH', SE.LENS.map(n => [n, n + ' G']), NEW.len, v => { NEW.len = +v; draw(); }),
+        h('div', { class: 'note' }, NEW.len === 162 ? 'The full real season. Sim it in seconds or play every game.' : NEW.len === 81 ? 'Half a season.' : NEW.len === 52 ? 'About a third of a season.' : 'A quick sprint to October.'),
+        h('button', { class: 'btn sn-start', ...(sel ? {} : { disabled: '' }), onclick: start }, sel ? 'START SEASON' : 'PICK A CLUB'))));
+    wrap.append(h('div', { class: 'panel sn-pick' }, h('h3', {}, 'SELECT YOUR CLUB'),
+      divisionGrid(NEW.team, id => { const y = el.scrollTop; NEW.team = id; draw(); el.scrollTop = y; el.scrollTo({ top: 0, behavior: 'smooth' }); navFocus(el.querySelector('.sn-start'), true); }, { sub: t => 'OVR ' + DB.teamOvr(t.id) })));
     el.append(topBar('NEW SEASON', 'season'), wrap);
   };
   const start = () => {
@@ -106,32 +108,47 @@ function hubView(el, slot, tab) {
   const div = divisions(st).find(d => d.lg === t.lg && d.div === t.div), place = div.teams.indexOf(me) + 1;
   const tabs = [...TABS]; if (S.post) tabs.push(['post', 'POSTSEASON']); if (S.champ) tabs.push(['champ', 'AWARDS']);
   const status = S.champ ? `${S.year} SEASON COMPLETE` : S.post ? `${S.year} POSTSEASON` : SE.seasonOver(S) ? 'REGULAR SEASON FINAL' : `GAME ${me.g + 1} OF ${S.len}`;
-  el.append(topBar(S.year + ' SEASON', 'season'),
-    h('div', { class: 'sn-head' }, badge(t, 46), h('div', {}, h('div', { class: 'tn' }, t.city + ' ' + t.name),
-      h('div', { class: 'ts' }, me.g ? `${me.w}-${me.l}  ·  ${ord(place)} ${t.lg} ${t.div}  ·  ${status}` : `${t.lg} ${t.div}  ·  OPENING DAY`))),
-    h('div', { class: 'nav' }, tabs.map(([k, l]) => h('button', { class: k === tab ? 'on' : '', onclick: () => ctx.go(k) }, h('span', {}, l)))));
-  const body = h('div', { class: 'wrapc', style: 'padding-top:8px' });
-  el.append(body);
+  const nav = h('div', { class: 'nav sn-tabs' }, h('i', { class: 'ind' }), tabs.map(([k, l]) => h('button', { class: k === tab ? 'on' : '', 'data-k': k, onclick: () => ctx.go(k) }, h('span', {}, l))));
+  const root = h('div', { class: 'sn', ...tv(t) });
+  root.append(topBar(S.year + ' SEASON', 'season'),
+    h('div', { class: 'sn-head' }, h('div', { class: 'in' },
+      h('div', { class: 'id' }, badge(t, 46), h('div', { class: 'tt' }, h('div', { class: 'tn' }, t.city + ' ' + t.name),
+        h('div', { class: 'ts' }, me.g ? h('b', {}, `${me.w}-${me.l}`) : null, me.g ? `${ord(place)} ${t.lg} ${t.div}  ·  ${status}` : `${t.lg} ${t.div}  ·  OPENING DAY`))),
+      nav)));
+  const body = h('div', { class: 'wrapc sn-body' });
+  root.append(body); el.append(root);
   const view = { home: homeTab, standings: standingsTab, schedule: scheduleTab, stats: statsTab, roster: rosterTab, post: postTab, champ: champTab }[tab] || homeTab;
   ctx.play = () => playUser(ctx); ctx.simTo = (n, label) => simDays(ctx, n, label);
   body.append(view(ctx));
+  // tab change: slide the gold marker from the old tab to the new one and ease the new page in
+  const idx = tabs.findIndex(([k]) => k === tab), prev = LAST_TAB.slot === slot ? LAST_TAB.idx : -1;
+  const btn = nav.querySelector('button.on'), ind = nav.querySelector('.ind');
+  const place_ = (b, anim) => { if (!b) return; ind.style.transition = anim ? '' : 'none'; ind.style.width = b.offsetWidth + 'px'; ind.style.transform = `translateX(${b.offsetLeft}px) skewX(-10deg)`; };
+  const from = prev >= 0 && prev !== idx ? nav.querySelectorAll('button')[prev] : null;
+  place_(from || btn, false);
+  if (from) { void ind.offsetWidth; requestAnimationFrame(() => place_(btn, true)); body.style.setProperty('--dx', (idx > prev ? 18 : -18) + 'px'); body.classList.add('enter'); }
+  if (btn && (btn.offsetLeft + btn.offsetWidth > nav.scrollLeft + nav.clientWidth || btn.offsetLeft < nav.scrollLeft)) nav.scrollLeft = btn.offsetLeft - 20;
+  LAST_TAB = { slot, idx };
 }
+let LAST_TAB = { slot: 0, idx: -1 };
 
 // ---------------- HOME ----------------
 function sideBox(S, team, sp, label) {
   const t = DB.team(team), s = standings(S).find(x => x.id === team), p = DB.player(sp), q = pline(S.pit[sp]);
-  return h('div', { class: 'side', style: `border-top:4px solid ${t.c1}` }, h('span', { class: 'pill' }, label), badge(t, 64),
-    h('div', { class: 'nm' }, t.name), h('div', { class: 'rec' }, `${s.w}-${s.l}`),
-    h('div', { class: 'sp' }, h('span', { class: 'muted' }, 'SP '), DB.nm(p), h('br'), h('span', { class: 'muted' }, q.g ? `${q.w}-${q.l}, ${fmtERA(q.era)} ERA` : `OVR ${p?.ovr ?? '-'}`)));
+  return h('div', { class: 'qp-mini', ...tv(t) }, h('div', { class: 'wm' }, badge(t, 150)),
+    h('div', { class: 'tag' + (label === 'YOU' ? ' you' : '') }, label), badge(t, 58),
+    h('div', { class: 'tx' }, h('div', { class: 'nm' }, t.name), h('div', { class: 'rec' }, `${s.w}-${s.l}`),
+      h('div', { class: 'sp' }, h('small', {}, 'SP'), DB.nm(p), h('span', {}, q.g ? `${q.w}-${q.l}, ${fmtERA(q.era)} ERA` : `OVR ${p?.ovr ?? '-'}`))));
 }
+const matchup = (S, at, ht, spA, spH) => h('div', { class: 'sn-mu' }, sideBox(S, at, spA, at === S.team ? 'YOU' : 'AWAY'), h('div', { class: 'vs' }, 'VS'), sideBox(S, ht, spH, ht === S.team ? 'YOU' : 'HOME'));
 const timeOf = (S, day) => { const d = dateOf(S.year, day, S.len); return d.dow === 'SUN' || (d.dow === 'SAT' && day % 2) ? 'day' : 'night'; };
 function nextCard(ctx) {
   const S = ctx.S, gi = SE.userGameIdx(S, S.day); if (gi < 0) return null;
   const g = S.games[gi], at = SE.tid(g[1]), ht = SE.tid(g[2]), dt = dateOf(S.year, S.day, S.len);
   const spA = SE.probable(S, at, S.day), spH = SE.probable(S, ht, S.day);
   return h('div', { class: 'panel sn-next' },
-    h('div', { class: 'when' }, `${dt.dow} ${dt.short}  ·  ${timeOf(S, S.day) === 'day' ? 'DAY GAME' : 'NIGHT GAME'}  ·  ${DB.park(ht).name}`),
-    h('div', { class: 'vs' }, sideBox(S, at, spA, at === S.team ? 'YOU' : 'AWAY'), h('div', { class: 'mid' }, '@'), sideBox(S, ht, spH, ht === S.team ? 'YOU' : 'HOME')),
+    h('div', { class: 'when' }, h('b', {}, 'NEXT GAME'), h('span', {}, `${dt.dow} ${dt.short}  ·  ${timeOf(S, S.day) === 'day' ? 'DAY GAME' : 'NIGHT GAME'}  ·  ${DB.park(ht).name}`)),
+    matchup(S, at, ht, spA, spH),
     h('div', { class: 'sn-acts' },
       h('button', { class: 'btn', onclick: ctx.play }, 'PLAY'),
       h('button', { class: 'btn ghost', onclick: () => ctx.simTo(1) }, 'SIM GAME'),
@@ -171,11 +188,11 @@ function homeTab(ctx) {
       h('div', { class: 'big' }, `${me.w}-${me.l}`), h('div', { class: 'muted' }, 'Twelve clubs move on. Division winners and three wild cards per league.'),
       h('div', { class: 'row', style: 'justify-content:center;margin-top:14px' }, h('button', { class: 'btn', onclick: () => startPostseason(ctx) }, 'START POSTSEASON'))));
   } else if (!S.champ) out.append(postCardHome(ctx));
-  else out.append(h('div', { class: 'panel sn-champ' }, badge(DB.team(S.champ), 90), h('div', { class: 'yr' }, `${S.year} WORLD SERIES CHAMPIONS`), h('div', { class: 'big' }, DB.teamName(DB.team(S.champ))),
+  else out.append(h('div', { class: 'panel sn-champ', ...tv(DB.team(S.champ)) }, badge(DB.team(S.champ), 90), h('div', { class: 'yr' }, `${S.year} WORLD SERIES CHAMPIONS`), h('div', { class: 'big' }, DB.teamName(DB.team(S.champ))),
     h('div', { class: 'row', style: 'justify-content:center;margin-top:12px' }, h('button', { class: 'btn', onclick: () => ctx.go('champ') }, 'AWARDS + NEXT SEASON'))));
   // record panel
   const div = divisions(st).find(d => d.lg === t.lg && d.div === t.div), place = div.teams.indexOf(me) + 1;
-  out.append(h('div', { class: 'panel' }, h('div', { class: 'sn-kv' },
+  out.append(h('div', { class: 'panel sn-kvp' }, h('div', { class: 'sn-kv' },
     h('div', {}, h('b', {}, `${me.w}-${me.l}`), h('span', {}, 'RECORD')),
     h('div', {}, h('b', {}, place === 1 ? '1ST' : String(me.gb)), h('span', {}, place === 1 ? t.div + ' LEADER' : 'GAMES BACK')),
     h('div', {}, h('b', {}, me.strk), h('span', {}, 'STREAK')),
@@ -186,7 +203,7 @@ function homeTab(ctx) {
     res.length ? res.map(gi => resultRow(S, gi, i => openBox(S, i))) : h('div', { class: 'muted' }, 'No games played yet.')));
   cols.append(h('div', { class: 'panel' }, h('h3', { style: 'margin-bottom:6px' }, `${t.lg} ${t.div}`),
     h('table', { class: 't sn-mini' }, h('tr', {}, h('th', {}, 'TEAM'), h('th', { class: 'n' }, 'W'), h('th', { class: 'n' }, 'L'), h('th', { class: 'n' }, 'GB'), h('th', { class: 'n' }, 'L10')),
-      div.teams.map(s => h('tr', { class: s.id === S.team ? 'me' : '' }, h('td', { style: 'font-weight:800' }, s.id), h('td', { class: 'n' }, String(s.w)), h('td', { class: 'n' }, String(s.l)), h('td', { class: 'n' }, s.gb ? String(s.gb) : '-'), h('td', { class: 'n' }, s.l10))))));
+      div.teams.map(s => h('tr', { class: s.id === S.team ? 'me' : '' }, h('td', { class: 'tm' }, h('span', {}, badge(DB.team(s.id), 20), s.id)), h('td', { class: 'n' }, String(s.w)), h('td', { class: 'n' }, String(s.l)), h('td', { class: 'n' }, s.gb ? String(s.gb) : '-'), h('td', { class: 'n' }, s.l10))))));
   cols.append(teamLeaders(S));
   out.append(cols);
   return out;
@@ -203,8 +220,8 @@ export function postGameCard(ctx, s) {
   const spA = SE.probable(S, at, day), spH = SE.probable(S, ht, day);
   const lead = s.w[0] === s.w[1] ? `SERIES TIED ${s.w[0]}-${s.w[1]}` : `${s.w[0] > s.w[1] ? s.hi : s.lo} LEADS ${Math.max(...s.w)}-${Math.min(...s.w)}`;
   return h('div', { class: 'panel sn-next' },
-    h('div', { class: 'when' }, `${PO.ROUNDS[s.r]}  ·  GAME ${s.g.length + 1}  ·  ${lead}  ·  ${pd.dow} ${pd.short}`),
-    h('div', { class: 'vs' }, sideBox(S, at, spA, at === S.team ? 'YOU' : 'AWAY'), h('div', { class: 'mid' }, '@'), sideBox(S, ht, spH, ht === S.team ? 'YOU' : 'HOME')),
+    h('div', { class: 'when' }, h('b', {}, PO.ROUNDS[s.r]), h('span', {}, `GAME ${s.g.length + 1}  ·  ${lead}  ·  ${pd.dow} ${pd.short}`)),
+    matchup(S, at, ht, spA, spH),
     h('div', { class: 'sn-acts' },
       h('button', { class: 'btn', onclick: ctx.play }, 'PLAY'),
       h('button', { class: 'btn ghost', onclick: () => postSim(ctx, 'day') }, 'SIM GAME'),

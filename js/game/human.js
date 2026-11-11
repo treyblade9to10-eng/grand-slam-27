@@ -43,6 +43,7 @@ export async function loadHuman() {
   const bones = {}; tpl.traverse(o => { if (o.isBone) bones[o.name] = o; });
   let bodyMesh = null, eyes = null, browMesh = null;
   tpl.traverse(o => { if (o.isSkinnedMesh) { if (/Superhero/i.test(o.material.name)) bodyMesh = o; else if (/Eye/i.test(o.material.name)) eyes = o; else browMesh = o; } });
+  reshapeBody(bodyMesh); evenTorso(bodyMesh); drapeJersey(bodyMesh);
   // ---- arms-down rest: rotate the arms of the template from T-pose to hanging straight down ----
   const down = new THREE.Vector3(0, -1, 0), a = new THREE.Vector3(), b = new THREE.Vector3(), q = new THREE.Quaternion(), pq = new THREE.Quaternion();
   for (const s of ['l', 'r']) for (const [n, c] of [['upperarm_' + s, 'lowerarm_' + s], ['lowerarm_' + s, 'hand_' + s]]) {
@@ -125,7 +126,7 @@ function skinTex(idx) {
 const C = (h) => new THREE.Color(h || '#ffffff');
 function uniformMaterial(skinIdx, U, opt) {
   const m = new THREE.MeshStandardMaterial({ map: skinTex(skinIdx), normalMap: H.normal, roughness: 0.62, metalness: 0 });
-  m.normalScale.set(0.8, 0.8);
+  m.normalScale.set(0.45, 0.45);
   const u = {
     uJersey: { value: C(U.base) }, uPants: { value: C(U.pants || U.base) }, uTrim: { value: C(U.trim) }, uTrim2: { value: C(U.piping || U.trim2 || U.trim) },
     uUnder: { value: C(U.under || U.trim) }, uBelt: { value: C(U.belt || U.trim) }, uSock: { value: C(U.sock || U.trim) }, uStripe: { value: C(U.sockStripe || U.base) },
@@ -155,16 +156,7 @@ function uniformMaterial(skinIdx, U, opt) {
           puff += pants * (0.018 + 0.012 * exp(-pow((y - 0.55) / 0.08, 2.0)) + 0.006 * smoothstep(0.6, 0.85, y));
           // blouse the pants just above the sock line
           puff += pants * 0.012 * exp(-pow((y - uPantsEnd - 0.03) / 0.03, 2.0));
-          // slim the superhero build a bit (shoulders / lats / arms)
           vec3 p = transformed;
-          if (y > 1.0 && y < 1.6) {
-            float band = smoothstep(1.0, 1.15, y) * (1.0 - smoothstep(1.52, 1.6, y));
-            float k = mix(0.92, 1.0, smoothstep(0.17, 0.27, ax));
-            p.x = mix(p.x, p.x * k, band); p.z = mix(p.z, p.z * 0.92, band * (1.0 - smoothstep(0.17, 0.27, ax)));
-            // flatten the superhero traps
-            p.y -= 0.022 * smoothstep(0.05, 0.12, ax) * (1.0 - smoothstep(0.17, 0.22, ax)) * smoothstep(1.47, 1.53, y);
-          }
-          if (ax >= 0.13 && y > 1.28) { vec3 axis = vec3(p.x, 1.44, -0.068); vec3 d = p - axis; p = axis + d * mix(1.0, 0.8, smoothstep(0.14, 0.22, ax)); }
           // body build: heavier players are wider through the trunk and thighs
           float bw = (uBuild - 1.0) * (smoothstep(0.55, 0.85, y) * (1.0 - smoothstep(1.35, 1.5, y))) * (1.0 - smoothstep(0.2, 0.3, ax));
           p.x += p.x * bw * 0.9; p.z += (p.z + 0.02) * bw * 1.1 * smoothstep(0.95, 1.15, y);
@@ -343,3 +335,74 @@ export function syncHuman(P) {
   }
 }
 const _K0 = new THREE.Vector3(), _N0 = new THREE.Vector3(), _X0 = new THREE.Vector3(), _X1 = new THREE.Vector3(), _m0 = new THREE.Matrix4(), _m1 = new THREE.Matrix4();
+
+// ---- make the superhero base mesh look like a ballplayer ----
+// Every vertex is pulled toward (or pushed away from) the bones it is skinned to: limbs get slimmer around the bone
+// axis, the chest/lats lose the V-taper, the waist fills in, hips/glutes come in. Done once, in the bind pose.
+const RESHAPE = {
+  thigh_l: 0.72, thigh_r: 0.72, calf_l: 0.86, calf_r: 0.86, upperarm_l: 0.76, upperarm_r: 0.76, lowerarm_l: 0.86, lowerarm_r: 0.86,
+  clavicle_l: 0.8, clavicle_r: 0.8, neck_01: 0.84,
+  spine_03: [0.82, 0.86], spine_02: [0.92, 0.95], spine_01: [1.04, 1.08], pelvis: [0.84, 0.76],
+};
+const CHILD = { thigh_l: 'calf_l', thigh_r: 'calf_r', calf_l: 'foot_l', calf_r: 'foot_r', upperarm_l: 'lowerarm_l', upperarm_r: 'lowerarm_r', lowerarm_l: 'hand_l', lowerarm_r: 'hand_r', clavicle_l: 'upperarm_l', clavicle_r: 'upperarm_r', neck_01: 'Head', spine_03: 'neck_01', spine_02: 'spine_03', spine_01: 'spine_02', pelvis: 'spine_01' };
+function reshapeBody(mesh) {
+  const sk = mesh.skeleton, G = mesh.geometry, P = G.attributes.position, SI = G.attributes.skinIndex, SW = G.attributes.skinWeight;
+  const bindPos = sk.boneInverses.map(m => new THREE.Vector3().setFromMatrixPosition(new THREE.Matrix4().copy(m).invert()));
+  const idx = {}; sk.bones.forEach((b, i) => { idx[b.name] = i; });
+  const seg = sk.bones.map((b) => { const f = RESHAPE[b.name], c = CHILD[b.name]; if (!f || idx[c] == null) return null; const A = bindPos[idx[b.name]], B = bindPos[idx[c]]; return { A, AB: B.clone().sub(A), L2: B.distanceToSquared(A), f }; });
+  const v = new THREE.Vector3(), out = new THREE.Vector3(), p = new THREE.Vector3(), d = new THREE.Vector3();
+  for (let i = 0; i < P.count; i++) {
+    v.fromBufferAttribute(P, i); out.set(0, 0, 0); let wsum = 0;
+    for (let k = 0; k < 4; k++) {
+      const w = SW.getComponent(i, k); if (w <= 0) continue; const s = seg[SI.getComponent(i, k)];
+      if (!s) { out.addScaledVector(v, w); wsum += w; continue; }
+      const t = Math.max(0, Math.min(1, d.copy(v).sub(s.A).dot(s.AB) / s.L2));
+      p.copy(s.A).addScaledVector(s.AB, t); d.copy(v).sub(p);
+      if (Array.isArray(s.f)) { d.x *= s.f[0]; d.z *= s.f[1]; } else d.multiplyScalar(s.f);
+      out.addScaledVector(p.add(d), w); wsum += w;
+    }
+    if (wsum > 0) P.setXYZ(i, out.x / wsum, out.y / wsum, out.z / wsum);
+  }
+  P.needsUpdate = true; G.computeBoundingSphere();
+}
+
+// flatten the superhero hourglass: the trunk's outline (half width per height) is pulled toward a broad moving
+// average, so the waist fills in and the chest / hips stop flaring. Arms (out to the side in the bind pose) are skipped.
+function evenTorso(mesh) {
+  const P = mesh.geometry.attributes.position, Y0 = 0.78, DY = 0.01, N = 66, w = new Float32Array(N);
+  const torso = (x, y) => Math.abs(x) < (y > 1.3 ? 0.17 : 0.22);
+  for (let i = 0; i < P.count; i++) { const x = P.getX(i), y = P.getY(i); const k = Math.round((y - Y0) / DY); if (k < 0 || k >= N || !torso(x, y)) continue; w[k] = Math.max(w[k], Math.abs(x)); }
+  for (let k = 1; k < N - 1; k++) if (!w[k]) w[k] = (w[k - 1] + w[k + 1]) / 2;
+  const avg = new Float32Array(N);
+  for (let k = 0; k < N; k++) { let s = 0, n = 0; for (let j = k - 11; j <= k + 11; j++) if (j >= 0 && j < N && w[j]) { s += w[j]; n++; } avg[k] = n ? s / n : w[k]; }
+  for (let i = 0; i < P.count; i++) {
+    const x = P.getX(i), y = P.getY(i); const k = Math.round((y - Y0) / DY); if (k < 0 || k >= N || !torso(x, y) || !w[k]) continue;
+    const edge = Math.min(1, (y - 0.80) / 0.08, (1.44 - y) / 0.08); if (edge <= 0) continue;
+    const f = 1 + (Math.max(0.9, Math.min(1.14, avg[k] / w[k])) - 1) * 0.8 * edge;
+    P.setX(i, x * f);
+  }
+  P.needsUpdate = true;
+}
+
+// the jersey hangs off the chest and shoulder blades instead of clinging to pecs and abs: the front/back of the
+// trunk below the chest is filled out to a straight line that falls from the chest to the belt.
+function drapeJersey(mesh) {
+  const P = mesh.geometry.attributes.position, Y0 = 0.96, DY = 0.01, N = 46, zF = new Float32Array(N).fill(-9), zB = new Float32Array(N).fill(9);
+  const torso = (x, y) => Math.abs(x) < (y > 1.3 ? 0.15 : 0.19);
+  for (let i = 0; i < P.count; i++) { const x = P.getX(i), y = P.getY(i), z = P.getZ(i); const k = Math.round((y - Y0) / DY); if (k < 0 || k >= N || !torso(x, y)) continue; zF[k] = Math.max(zF[k], z); zB[k] = Math.min(zB[k], z); }
+  const tF = new Float32Array(N), tB = new Float32Array(N);
+  for (let k = 0; k < N; k++) {
+    let f = zF[k], b = zB[k];
+    for (let j = k + 1; j < N; j++) { const dy = (j - k) * DY; f = Math.max(f, zF[j] - 0.18 * dy); b = Math.min(b, zB[j] + 0.3 * dy); }
+    tF[k] = f; tB[k] = b;
+  }
+  for (let i = 0; i < P.count; i++) {
+    const x = P.getX(i), y = P.getY(i), z = P.getZ(i); const k = Math.round((y - Y0) / DY); if (k < 0 || k >= N || !torso(x, y)) continue;
+    const edge = Math.min(1, (y - 0.97) / 0.05, (1.42 - y) / 0.04); if (edge <= 0) continue;
+    const c = (zF[k] + zB[k]) / 2;
+    const side = Math.max(0, 1 - Math.pow(Math.abs(x) / (y > 1.3 ? 0.15 : 0.19), 4)); // full effect in the middle, fades at the sides
+    if (z > c && zF[k] > c) P.setZ(i, c + (z - c) * (1 + ((tF[k] - c) / (zF[k] - c) - 1) * edge * side));
+    else if (z < c && zB[k] < c) P.setZ(i, c + (z - c) * (1 + ((c - tB[k]) / (c - zB[k]) - 1) * edge * side));
+  }
+  P.needsUpdate = true;
+}

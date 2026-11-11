@@ -1,5 +1,5 @@
 // MLB Grand Slam 27 - app shell: router, title, quick play setup, controls guide, settings
-import { h, $, $$, esc, toast, badge, menuNav, modal } from './ui.js';
+import { h, $, $$, esc, toast, badge, menuNav, modal, tv, teamRatings, ratingBars, divisionGrid, navFocus } from './ui.js';
 import { Settings, saveSettings } from './store.js';
 import * as DB from './db.js';
 import { preloadLogos } from './logos.js';
@@ -48,48 +48,126 @@ register('title', async (el) => {
 });
 
 // ---------------- quick play setup ----------------
-const QP = { away: 'LAD', home: 'NYY', user: 'home', time: 'night', park: null, innings: Settings.innings };
-function teamPicker(sel, onPick) {
-  return h('div', { class: 'tgrid' }, DB.TEAMS.slice().sort((a, b) => a.city.localeCompare(b.city)).map(t => {
-    const b = h('button', { class: 'tbtn' + (t.id === sel ? ' on' : ''), onclick: () => onPick(t.id) }, badge(t, 44), t.id);
-    return b;
-  }));
+// MLB The Show style matchup screen: away card | VS | home card. Arrows, swipes or the 30-club grid change a side;
+// the card slides out / in (transform + opacity only). Options strip + PLAY BALL underneath.
+const rnd5 = () => Math.random() * 5 | 0;
+const QP = { away: 'LAD', home: 'NYY', user: 'home', time: 'night', park: null, innings: Settings.innings, sp: { away: rnd5(), home: rnd5() } };
+const TEAM_ORDER = () => DB.TEAMS.slice().sort((a, b) => a.city.localeCompare(b.city) || a.name.localeCompare(b.name)).map(t => t.id);
+const other = side => side === 'away' ? 'home' : 'away';
+const chev = d => h('span', { class: 'chev' + (d < 0 ? ' l' : '') });
+function matchCard(side) {
+  const t = DB.team(QP[side]), r = teamRatings(t.id), d = DB.DEPTH[t.id];
+  const sp = d && DB.player(d.rotation[QP.sp[side] % d.rotation.length]);
+  return h('div', { class: 'qp-card', ...tv(t) },
+    h('div', { class: 'wm' }, badge(t, 300)),
+    h('div', { class: 'logo' }, badge(t, 120)),
+    h('div', { class: 'tx' },
+      h('div', { class: 'city' }, t.city),
+      h('div', { class: 'name' }, t.name),
+      h('div', { class: 'meta' }, h('span', { class: 'ovr' }, h('small', {}, 'OVR'), String(r.ovr)), ratingBars(r)),
+      sp ? h('div', { class: 'sp' }, h('small', {}, 'SP'), DB.full(sp), h('b', {}, String(sp.ovr))) : null));
 }
-function sideCard(id, label) {
-  const t = DB.team(id), ovr = DB.teamOvr(id), d = DB.DEPTH[id];
-  const sp = d && DB.player(d.rotation[0]);
-  return h('div', { class: 'side', style: `border-top:4px solid ${t.c1}` },
-    h('span', { class: 'pill' }, label), badge(t, 84), h('div', { class: 'nm' }, t.city, ' ', h('br'), t.name),
-    h('div', { class: 'muted cond', style: 'font:800 16px Barlow Condensed' }, 'TEAM OVR ' + ovr + (sp ? '  /  SP ' + DB.nm(sp) : '')));
-}
-register('play', (el, args) => {
-  const draw = () => {
-    el.innerHTML = '';
-    const wrap = h('div', { class: 'wrapc' });
-    const pk = DB.park(QP.park || QP.home);
-    wrap.append(
-      h('div', { class: 'vs' }, sideCard(QP.away, 'AWAY'), h('div', { class: 'mid' }, 'AT'), sideCard(QP.home, 'HOME')),
-      h('div', { class: 'row', style: 'margin:14px 0;justify-content:center' },
-        h('button', { class: 'btn ghost small', onclick: () => { [QP.away, QP.home] = [QP.home, QP.away]; QP.park = null; draw(); } }, 'SWAP'),
-        h('button', { class: 'btn ghost small', onclick: () => { const ids = DB.TEAMS.map(t => t.id); QP.away = ids[Math.random() * 30 | 0]; do QP.home = ids[Math.random() * 30 | 0]; while (QP.home === QP.away); QP.park = null; draw(); } }, 'RANDOM')),
-      h('div', { class: 'panel grid', style: 'gap:14px' },
-        optRow('YOU CONTROL', [['away', 'AWAY'], ['home', 'HOME'], ['both', 'BOTH'], ['none', 'WATCH CPU']], QP.user, v => { QP.user = v; draw(); }),
-        optRow('TIME', [['day', 'DAY'], ['dusk', 'SUNSET'], ['night', 'NIGHT']], QP.time, v => { QP.time = v; draw(); }),
-        optRow('INNINGS', [[3, '3'], [5, '5'], [7, '7'], [9, '9']], QP.innings, v => { QP.innings = +v; Settings.innings = +v; saveSettings(); draw(); }),
-        h('label', { class: 'f' }, 'BALLPARK', (() => {
-          const s = h('select', { onchange: e => { QP.park = e.target.value === QP.home ? null : e.target.value; draw(); } },
-            DB.TEAMS.slice().sort((a, b) => DB.park(a.id).name.localeCompare(DB.park(b.id).name)).map(t => h('option', { value: t.id, ...(t.id === (QP.park || QP.home) ? { selected: '' } : {}) }, DB.park(t.id).name + ' (' + t.id + ')')));
-          return s;
-        })()),
-        h('div', { class: 'muted', style: 'font-size:13px' }, `${pk.name} - ${pk.city}. LF ${pk.dims[0]}  CF ${pk.dims[3]}  RF ${pk.dims[6]}. ${pk.roof === 'dome' ? 'Dome.' : pk.roof === 'retractable' ? 'Retractable roof.' : 'Open air.'}`)),
-      h('div', { class: 'row playbar', style: 'margin:16px 0;justify-content:center' },
-        h('button', { class: 'btn', style: 'font-size:26px;padding:14px 40px', onclick: startQuick }, 'PLAY BALL')),
-      h('h3', { style: 'margin:18px 0 8px' }, 'AWAY'), teamPicker(QP.away, id => { if (id === QP.home) QP.home = QP.away; QP.away = id; draw(); }),
-      h('h3', { style: 'margin:18px 0 8px' }, 'HOME'), teamPicker(QP.home, id => { if (id === QP.away) QP.away = QP.home; QP.home = id; QP.park = null; draw(); }),
-    );
-    el.append(topBar('PLAY NOW', ''), wrap);
+register('play', (el) => {
+  const ctlLabel = side => QP.user === 'both' || QP.user === side ? 'YOU' : 'CPU';
+  const sideEl = side => {
+    const slot = h('div', { class: 'qp-slot nv', title: 'Tap for all 30 clubs' }, matchCard(side));
+    const s = h('div', { class: 'qp-side ' + side },
+      h('div', { class: 'qp-tag' }, h('span', {}, side === 'away' ? 'AWAY' : 'HOME'), h('b', { class: 'ctl' }, ctlLabel(side))),
+      slot,
+      h('button', { class: 'qp-arr prev nv', 'aria-label': 'Previous club', onclick: () => cycle(side, -1) }, chev(-1)),
+      h('button', { class: 'qp-arr next nv', 'aria-label': 'Next club', onclick: () => cycle(side, 1) }, chev(1)));
+    swipe(slot, side);
+    return s;
   };
-  draw();
+  // swipe a card left / right to change club, tap it for the grid
+  const swipe = (slot, side) => {
+    let sx = 0, sy = 0, dx = 0, drag = false, id = null, moved = false;
+    slot.addEventListener('pointerdown', e => { id = e.pointerId; sx = e.clientX; sy = e.clientY; dx = 0; drag = false; moved = false; });
+    slot.addEventListener('pointermove', e => {
+      if (e.pointerId !== id) return;
+      dx = e.clientX - sx; const dy = e.clientY - sy;
+      if (!drag && Math.abs(dx) > 10 && Math.abs(dx) > Math.abs(dy) * 1.2) { drag = true; moved = true; try { slot.setPointerCapture(id); } catch (er) { } }
+      if (Math.abs(dx) > 8 || Math.abs(dy) > 8) moved = true;
+      if (drag) { const c = slot.querySelector('.qp-card:not(.out)'); if (c) { c.style.transition = 'none'; c.style.transform = `translateX(${dx * 0.55}px)`; c.style.opacity = String(1 - Math.min(0.5, Math.abs(dx) / 500)); } }
+    });
+    const end = e => {
+      if (e.pointerId !== id) return; id = null;
+      const c = slot.querySelector('.qp-card:not(.out)');
+      if (drag && c) { c.style.transition = ''; c.style.opacity = ''; if (Math.abs(dx) > 45) cycle(side, dx < 0 ? 1 : -1); else c.style.transform = ''; }
+      drag = false;
+    };
+    slot.addEventListener('pointerup', end); slot.addEventListener('pointercancel', end);
+    slot.addEventListener('click', () => { if (!moved) pickGrid(side); moved = false; });
+  };
+  const swapCard = (side, dir) => {
+    const slot = el.querySelector('.qp-side.' + side + ' .qp-slot'); if (!slot) return;
+    slot.querySelectorAll('.qp-card.out').forEach(e => e.remove());
+    const old = slot.querySelector('.qp-card'), nw = matchCard(side);
+    nw.classList.add(dir > 0 ? 'from-r' : dir < 0 ? 'from-l' : 'from-z'); slot.append(nw);
+    if (old) { old.style.transform = old.style.transform || ''; old.classList.add('out', dir > 0 ? 'to-l' : dir < 0 ? 'to-r' : 'to-z'); old.style.transform = ''; setTimeout(() => old.remove(), 340); }
+    void nw.offsetWidth; nw.classList.remove('from-r', 'from-l', 'from-z');
+  };
+  const setTeam = (side, id, dir) => {
+    if (id === QP[side]) return;
+    const o = other(side), swapped = id === QP[o];
+    if (swapped) { QP[o] = QP[side]; QP.sp[o] = rnd5(); }
+    QP[side] = id; QP.sp[side] = rnd5(); QP.park = null;
+    swapCard(side, dir); if (swapped) swapCard(o, -dir || 0);
+    drawOpts();
+  };
+  const cycle = (side, dir) => {
+    const ids = TEAM_ORDER(); let i = ids.indexOf(QP[side]);
+    do i = (i + dir + ids.length) % ids.length; while (ids[i] === QP[other(side)]);
+    setTeam(side, ids[i], dir);
+  };
+  const pickGrid = side => {
+    const m = modal(''); m.el.classList.add('pickm');
+    const done = () => { m.close(); navFocus(el.querySelector(`.qp-side.${side} .qp-slot`), true); };
+    m.el.append(h('div', { class: 'pickh' }, h('h2', {}, side === 'away' ? 'SELECT AWAY CLUB' : 'SELECT HOME CLUB'),
+      h('button', { class: 'btn ghost small', onclick: done }, 'CLOSE')),
+      divisionGrid(QP[side], id => { done(); setTeam(side, id, 0); }, { other: QP[other(side)], sub: t => 'OVR ' + DB.teamOvr(t.id) }));
+    setTimeout(() => navFocus(m.el.querySelector('.tbtn.on')), 30);
+  };
+  const opts = h('div', { class: 'qp-opts' });
+  const drawOpts = () => {
+    const pk = DB.park(QP.park || QP.home);
+    for (const s of ['away', 'home']) { const c = el.querySelector(`.qp-side.${s} .ctl`); if (c) { c.textContent = ctlLabel(s); c.classList.toggle('you', ctlLabel(s) === 'YOU'); } }
+    const parks = DB.TEAMS.slice().sort((a, b) => DB.park(a.id).name.localeCompare(DB.park(b.id).name)).map(t => t.id);
+    const stepPark = d => { const i = parks.indexOf(QP.park || QP.home), n = parks[(i + d + parks.length) % parks.length]; QP.park = n === QP.home ? null : n; drawOpts(); };
+    const navs = () => [...opts.querySelectorAll('button')];
+    const fi = navs().findIndex(b => b.classList.contains('focus')); // keep keyboard / controller focus across the redraw
+    opts.innerHTML = '';
+    opts.append(
+      h('div', { class: 'qp-row' },
+        optRow('YOU CONTROL', [['away', 'AWAY'], ['home', 'HOME'], ['both', 'BOTH'], ['none', 'WATCH CPU']], QP.user, v => { QP.user = v; drawOpts(); }),
+        optRow('TIME', [['day', 'DAY'], ['dusk', 'SUNSET'], ['night', 'NIGHT']], QP.time, v => { QP.time = v; drawOpts(); }),
+        optRow('INNINGS', [[3, '3'], [5, '5'], [7, '7'], [9, '9']], QP.innings, v => { QP.innings = +v; Settings.innings = +v; saveSettings(); drawOpts(); })),
+      h('div', { class: 'qp-row qp-bot' },
+        h('div', { class: 'qp-park' },
+          h('span', { class: 'lbl' }, 'BALLPARK'),
+          h('button', { class: 'qp-step nv', 'aria-label': 'Previous ballpark', onclick: () => stepPark(-1) }, chev(-1)),
+          h('div', { class: 'pk' },
+            h('select', { 'aria-label': 'Ballpark', onchange: e => { QP.park = e.target.value === QP.home ? null : e.target.value; drawOpts(); } },
+              parks.map(id => h('option', { value: id, ...(id === (QP.park || QP.home) ? { selected: '' } : {}) }, DB.park(id).name))),
+            h('div', { class: 'pn' }, pk.name),
+            h('div', { class: 'pd' }, `${pk.city}  ·  LF ${pk.dims[0]}  CF ${pk.dims[3]}  RF ${pk.dims[6]}  ·  ${pk.roof === 'dome' ? 'DOME' : pk.roof === 'retractable' ? 'RETRACTABLE ROOF' : 'OPEN AIR'}`)),
+          h('button', { class: 'qp-step nv', 'aria-label': 'Next ballpark', onclick: () => stepPark(1) }, chev(1))),
+        h('button', { class: 'btn qp-play', onclick: startQuick }, 'PLAY BALL')));
+    if (fi >= 0) navFocus(navs()[fi], true);
+  };
+  const randomize = () => {
+    const ids = DB.TEAMS.map(t => t.id); let a = ids[Math.random() * 30 | 0], b; do b = ids[Math.random() * 30 | 0]; while (b === a);
+    QP.away = a; QP.home = b; QP.sp = { away: rnd5(), home: rnd5() }; QP.park = null; swapCard('away', 1); swapCard('home', 1); drawOpts();
+  };
+  const swapSides = () => { [QP.away, QP.home] = [QP.home, QP.away]; [QP.sp.away, QP.sp.home] = [QP.sp.home, QP.sp.away]; QP.park = null; swapCard('away', 1); swapCard('home', -1); drawOpts(); };
+  const stage = h('div', { class: 'qp-stage' }, sideEl('away'),
+    h('div', { class: 'qp-mid' }, h('div', { class: 'qp-vs' }, 'VS'),
+      h('button', { class: 'qp-sm nv', onclick: swapSides }, 'SWAP'),
+      h('button', { class: 'qp-sm nv', onclick: randomize }, 'RANDOM')),
+    sideEl('home'));
+  el.append(topBar('PLAY NOW', ''), h('div', { class: 'qp' }, stage, opts));
+  drawOpts();
+  setTimeout(() => navFocus(el.querySelector('.qp-play')), 40);
 });
 export function optRow(label, opts, cur, on) {
   return h('div', { class: 'row', style: 'justify-content:space-between' }, h('span', { class: 'cond', style: 'font:800 16px Barlow Condensed;letter-spacing:.6px;color:var(--mut)' }, label),
@@ -98,7 +176,7 @@ export function optRow(label, opts, cur, on) {
 async function startQuick() {
   goLandscape();
   const { playLive } = await import('./game/game.js');
-  const spA = Math.random() * 5 | 0, spH = Math.random() * 5 | 0;
+  const spA = QP.sp.away, spH = QP.sp.home; // the starters shown on the matchup cards
   const box = await playLive({
     away: DB.defaultSide(QP.away, spA), home: DB.defaultSide(QP.home, spH), park: QP.park || QP.home, time: QP.time,
     user: QP.user, innings: QP.innings, mode: 'exhibition',

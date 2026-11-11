@@ -1131,17 +1131,29 @@ function kf(list, t) {
 export const PITCH_RELEASE = 0.72;
 const KF_PITCH = [
   [0, { shLx: -0.75, shLz: -0.15, elL: -1.7, shRx: -0.7, shRz: 0.15, elR: -1.7, knL: 0.12, knR: 0.12, spineX: 0.08, headY: 0 }],
+  // leg kick, hands together at the chest
   [0.3, { hipLx: -1.55, knL: 1.7, hipRx: 0.02, knR: 0.25, pelvisY: -0.75, chestY: -0.55, spineX: -0.05, shLx: -0.8, shLz: -0.1, elL: -1.6, shRx: -0.75, shRz: 0.1, elR: -1.6, headY: 0.95 }],
-  [0.55, { hipLx: -1.0, knL: 0.55, hipLz: 0.25, hipRx: 0.45, knR: 0.55, hipRz: -0.2, pelvisY: -0.35, chestY: -0.7, spineX: 0.05, shLx: -1.4, shLz: 0.35, elL: -0.4, shRx: 0.9, shRz: -1.35, elR: -1.5, headY: 0.7 }],
-  [0.72, { hipLx: -0.95, knL: 0.35, hipLz: 0.2, hipRx: 0.55, knR: 0.8, hipRz: -0.15, pelvisY: 0.2, chestY: 0.45, spineX: 0.65, shLx: -0.3, shLz: 0.2, elL: -1.8, shRx: -2.5, shRz: -0.55, elR: -0.15, headY: 0, headX: -0.45 }],
-  [1, { hipLx: -0.55, knL: 0.45, hipRx: -0.45, knR: 1.0, pelvisY: 0.35, chestY: 0.7, spineX: 0.85, shLx: -0.2, shLz: 0.3, elL: -1.6, shRx: -0.5, shRz: 0.55, elR: -0.7, headX: -0.4 }],
+  // hands break: ball hand swings down and back, glove reaches toward the plate
+  [0.45, { hipLx: -1.2, knL: 0.9, hipLz: 0.2, hipRx: 0.25, knR: 0.45, hipRz: -0.15, pelvisY: -0.55, chestY: -0.7, spineX: 0.0, shLx: -1.4, shLz: 0.3, elL: -0.5, shRx: 0.55, shRz: -0.8, elR: -0.3, headY: 0.85 }],
+  // foot strike, arm cocked ("L": elbow at shoulder height, ball up behind the head)
+  [0.58, { hipLx: -1.0, knL: 0.5, hipLz: 0.25, hipRx: 0.5, knR: 0.6, hipRz: -0.2, pelvisY: -0.25, chestY: -0.65, spineX: 0.08, shLx: -1.45, shLz: 0.35, elL: -0.6, shRx: -1.5, shRz: -1.5, elR: -1.6, headY: 0.65 }],
+  // release out in front of the head
+  [0.72, { hipLx: -0.95, knL: 0.35, hipLz: 0.2, hipRx: 0.55, knR: 0.8, hipRz: -0.15, pelvisY: 0.2, chestY: 0.45, spineX: 0.5, shLx: -0.35, shLz: 0.2, elL: -1.8, shRx: -2.8, shRz: -0.45, elR: -0.15, headY: 0, headX: -0.4 }],
+  // follow through
+  [1, { hipLx: -0.55, knL: 0.45, hipRx: -0.45, knR: 1.0, pelvisY: 0.35, chestY: 0.7, spineX: 0.85, shLx: -0.2, shLz: 0.3, elL: -1.6, shRx: -0.6, shRz: 0.55, elR: -0.7, headX: -0.4 }],
 ];
 export const THROW_RELEASE = 0.6;
 const KF_THROW = [
-  [0, { hipLx: -0.3, knL: 0.4, hipRx: -0.2, knR: 0.45, spineX: 0.3, shLx: -0.9, elL: -1.2, shRx: -0.8, elR: -1.4 }],
-  [0.35, { hipLx: -0.7, knL: 0.4, hipLz: 0.2, hipRx: 0.35, knR: 0.5, pelvisY: -0.5, chestY: -0.7, spineX: 0.1, shLx: -1.5, shLz: 0.3, elL: -0.3, shRx: 1.0, shRz: -1.3, elR: -1.5, headY: 0.7 }],
-  [0.6, { hipLx: -0.8, knL: 0.3, hipRx: 0.5, knR: 0.7, pelvisY: 0.2, chestY: 0.45, spineX: 0.55, shLx: -0.3, elL: -1.7, shRx: -2.5, shRz: -0.5, elR: -0.15, headY: 0 }],
-  [1, { hipLx: -0.4, knL: 0.4, hipRx: -0.3, knR: 0.8, pelvisY: 0.3, chestY: 0.6, spineX: 0.6, shLx: -0.2, elL: -1.4, shRx: -0.6, shRz: 0.5, elR: -0.6 }],
+  // gather: ball in the glove at the chest
+  [0, { hipLx: -0.3, knL: 0.45, hipRx: -0.2, knR: 0.5, spineX: 0.3, shLx: -0.95, shLz: -0.1, elL: -1.5, shRx: -0.85, shRz: 0.1, elR: -1.6, chestY: 0 }],
+  // hands break: glove points at the target, throwing arm swings down and back
+  [0.25, { hipLx: -0.6, knL: 0.4, hipLz: 0.15, hipRx: 0.25, knR: 0.5, pelvisY: -0.45, chestY: -0.55, spineX: 0.15, shLx: -1.45, shLz: 0.25, elL: -0.35, shRx: 0.55, shRz: -0.75, elR: -0.35, headY: 0.6 }],
+  // cocked: upper arm out level with the shoulder, forearm straight up ("L"), stride foot lands
+  [0.42, { hipLx: -0.85, knL: 0.35, hipLz: 0.2, hipRx: 0.45, knR: 0.55, pelvisY: -0.3, chestY: -0.6, spineX: 0.05, shLx: -1.5, shLz: 0.35, elL: -0.5, shRx: -1.45, shRz: -1.5, elR: -1.55, headY: 0.6 }],
+  // release: arm whips over the top, out in front of the head
+  [0.6, { hipLx: -0.8, knL: 0.3, hipRx: 0.5, knR: 0.75, pelvisY: 0.25, chestY: 0.5, spineX: 0.55, shLx: -0.35, shLz: 0.2, elL: -1.6, shRx: -2.55, shRz: -0.45, elR: -0.2, headY: 0 }],
+  // follow through across the body
+  [1, { hipLx: -0.45, knL: 0.4, hipRx: -0.3, knR: 0.85, pelvisY: 0.35, chestY: 0.65, spineX: 0.65, shLx: -0.2, shLz: 0.15, elL: -1.4, shRx: -0.75, shRz: 0.55, elR: -0.6 }],
 ];
 // right-handed batter facing +z (the plate); pitcher is to his left (+x). Contact at t = SWING_CONTACT
 export const SWING_CONTACT = 0.5;

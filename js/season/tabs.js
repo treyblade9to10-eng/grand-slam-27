@@ -9,7 +9,7 @@ import { resultRow, openBox } from './ui.js';
 
 const VIEW = { stand: 'div', lg: 'MLB', stats: 'leaders', sort: 'r' };
 const pct = v => v.toFixed(3).replace(/^0/, '');
-const teamCell = (S, id) => h('td', { style: 'font-weight:800' }, h('span', { style: 'display:inline-flex;align-items:center;gap:6px' }, badge(DB.team(id), 20), id));
+const teamCell = (S, id) => h('td', { class: 'tm' }, h('span', {}, badge(DB.team(id), 20), id));
 
 // ---------------- STANDINGS ----------------
 export function standingsTab(ctx) {
