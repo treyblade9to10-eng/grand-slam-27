@@ -1004,6 +1004,9 @@ export function animate(P, pose, dt) {
   // feet stay flat
   P.ftL.rotation.x = -(P.hipL.rotation.x + P.knL.rotation.x) * 0.92 - P.body.rotation.x * 0.3;
   P.ftR.rotation.x = -(P.hipR.rotation.x + P.knR.rotation.x) * 0.92 - P.body.rotation.x * 0.3;
+  // heel raise / foot pivot (swing finish: back foot up on its toe and turned toward the pitcher)
+  if (T.ftLx) P.ftL.rotation.x += T.ftLx; if (T.ftRx) P.ftR.rotation.x += T.ftRx;
+  P.ftL.rotation.y = T.ftLy || 0; P.ftR.rotation.y = T.ftRy || 0;
   // keep the planted foot on the ground
   const ext = Math.max(legExt(P.hipL.rotation.x, P.knL.rotation.x) * Math.cos(P.hipL.rotation.z), legExt(P.hipR.rotation.x, P.knR.rotation.x) * Math.cos(P.hipR.rotation.z));
   const groundY = LEN.hipOff + ext + LEN.ankleH;
@@ -1013,10 +1016,11 @@ export function animate(P, pose, dt) {
   let mocapOn = false;
   if (P.hm && MC.CLIPS.swing && !globalThis.__noMocap) {
     if (m === 'pitch' || m === 'set') mocapOn = MC.applyMocap(P, 'pitch', m === 'set' ? 0 : pose.t || 0);
-    else if (m === 'swing' || m === 'stance') mocapOn = MC.applyMocap(P, 'swing', m === 'stance' ? (pose.load || 0) * 0.25 : pose.t || 0, 'body');
+    else if ((m === 'swing' || m === 'stance') && globalThis.__mocapSwing) mocapOn = MC.applyMocap(P, 'swing', m === 'stance' ? (pose.load || 0) * 0.25 : pose.t || 0, 'body');
   }
   P._mocap = mocapOn;
   if (!mocapOn && P.hm) { const J0 = HUM.J.pelvis; P.body.position.x += (J0[0] - P.body.position.x) * k; P.body.position.z += (J0[2] - P.body.position.z) * k; }
+  if (P.hm && (PLANT.has(m) && T.bodyY == null || m === 'squat')) plantFeet(P);
   if (P.batPivot) batPose(P, pose);
   if (P.hm) {
     const a = P._arm || (P._arm = new Float32Array(6)), L = P.shL.rotation, R = P.shR.rotation;
@@ -1025,6 +1029,23 @@ export function animate(P, pose, dt) {
     declipArms(P, !!(P.batPivot && P.batPivot.visible));
   }
   if (P.sync) P.sync();
+}
+
+// ---- feet on the ground ----
+// Poses that stand on the ground (stance, swing, delivery, crouches...) are dropped/raised so the lowest point of
+// either shoe sole touches y = 0 in the driver frame (the mocap pelvis height and bent-knee poses left gaps).
+const PLANT = new Set(['stance', 'swing', 'bunt', 'set', 'pitch', 'squat', 'ump', 'idle', 'ready', 'stand', 'mark', 'lead', 'throwOH', 'throw', 'scoop', 'pose', 'hold', 'arms', 'sad', 'clap', 'point', 'catch']);
+const SOLE = [[0.035, -0.086, -0.065], [-0.035, -0.086, -0.065], [0.042, -0.086, 0.11], [-0.04, -0.086, 0.11], [0, -0.08, 0.175]].map(a => new THREE.Vector3(...a));
+const _sp = new THREE.Vector3(), _drvInv = new THREE.Matrix4(), _fm = new THREE.Matrix4();
+function plantFeet(P) {
+  const drv = P.body.parent; P.body.updateMatrixWorld(true);
+  _drvInv.copy(drv.matrixWorld).invert();
+  let lo = Infinity;
+  for (const f of [P.ftL, P.ftR]) {
+    _fm.multiplyMatrices(_drvInv, f.matrixWorld);
+    for (const s of SOLE) { const y = _sp.copy(s).applyMatrix4(_fm).y; if (y < lo) lo = y; }
+  }
+  if (isFinite(lo)) { P.body.position.y -= lo; P.body.updateMatrixWorld(true); }
 }
 
 // ---- keep arms out of the body ----
@@ -1137,7 +1158,7 @@ export function portrait(card, team) {
 }
 
 // ---------------- baseball keyframes ----------------
-const BASE = { hipLx: 0, hipRx: 0, hipLz: 0.03, hipRz: -0.03, knL: 0.05, knR: 0.05, shLx: 0, shRx: 0, shLz: 0.1, shRz: -0.1, elL: -0.25, elR: -0.25, spineX: 0.02, spineY: 0, chestY: 0, chestX: 0, pelvisY: 0, pelvisX: 0, pelvisZ: 0, headX: 0, headY: 0 };
+const BASE = { hipLx: 0, hipRx: 0, hipLz: 0.03, hipRz: -0.03, knL: 0.05, knR: 0.05, shLx: 0, shRx: 0, shLz: 0.1, shRz: -0.1, elL: -0.25, elR: -0.25, spineX: 0.02, spineY: 0, chestY: 0, chestX: 0, pelvisY: 0, pelvisX: 0, pelvisZ: 0, headX: 0, headY: 0, ftLx: 0, ftRx: 0, ftLy: 0, ftRy: 0 };
 function kf(list, t) {
   let i = 0; while (i < list.length - 2 && t > list[i + 1][0]) i++;
   const [t0, a] = list[i], [t1, b] = list[i + 1];
@@ -1177,10 +1198,18 @@ const KF_THROW = [
 // right-handed batter facing +z (the plate); pitcher is to his left (+x). Contact at t = SWING_CONTACT
 export const SWING_CONTACT = 0.5;
 const KF_SWING = [
-  [0, { hipLx: -0.28, hipRx: -0.32, hipLz: 0.24, hipRz: -0.26, knL: 0.42, knR: 0.48, spineX: 0.28, chestY: -0.22, pelvisY: -0.08, headY: 1.15, headX: -0.1 }],
-  [0.25, { hipLx: -0.45, hipRx: -0.3, hipLz: 0.38, hipRz: -0.26, knL: 0.5, knR: 0.55, spineX: 0.3, chestY: -0.38, pelvisY: -0.15, headY: 1.2, headX: -0.1 }],
-  [0.5, { hipLx: -0.4, hipRx: -0.1, hipLz: 0.36, hipRz: -0.12, knL: 0.2, knR: 0.8, spineX: 0.3, chestY: 0.45, pelvisY: 0.85, headY: 0.3, headX: -0.1 }],
-  [1, { hipLx: -0.3, hipRx: 0.1, hipLz: 0.3, hipRz: 0.0, knL: 0.15, knR: 0.9, spineX: 0.12, chestY: 0.95, pelvisY: 1.2, headY: 0.0 }],
+  // athletic stance: feet a bit wider than the shoulders, knees flexed, hinge at the hips, eyes on the pitcher
+  [0, { hipLx: -0.3, hipRx: -0.34, hipLz: 0.27, hipRz: -0.27, knL: 0.48, knR: 0.52, spineX: 0.3, chestY: -0.2, pelvisY: -0.1, headY: 1.15, headX: -0.12 }],
+  // load: hands and hips coil back, front foot lifts (leg kick / toe tap)
+  [0.25, { hipLx: -0.62, hipRx: -0.36, hipLz: 0.2, hipRz: -0.26, knL: 0.85, knR: 0.6, spineX: 0.3, chestY: -0.42, pelvisY: -0.24, headY: 1.2, headX: -0.12, ftLx: 0.25 }],
+  // stride lands toward the pitcher, hips start to fire, hands stay back
+  [0.4, { hipLx: -0.42, hipRx: -0.36, hipLz: 0.4, hipRz: -0.24, knL: 0.42, knR: 0.66, spineX: 0.32, chestY: -0.3, pelvisY: 0.3, headY: 1.0, headX: -0.15 }],
+  // contact: front leg braced straight, back knee drives in, back heel up, hips open, head still on the ball
+  [0.5, { hipLx: -0.36, hipRx: -0.2, hipLz: 0.4, hipRz: -0.08, knL: 0.12, knR: 0.82, spineX: 0.32, chestY: 0.45, pelvisY: 0.92, headY: 0.55, headX: -0.25, ftRx: 0.45, ftRy: 0.5 }],
+  // extension through the ball
+  [0.66, { hipLx: -0.3, hipRx: -0.05, hipLz: 0.36, hipRz: 0.02, knL: 0.08, knR: 0.9, spineX: 0.22, chestY: 0.85, pelvisY: 1.15, headY: 0.35, headX: -0.15, ftRx: 0.75, ftRy: 0.8 }],
+  // finish: chest to the pitcher, bat wrapped over the front shoulder, back foot up on its toe
+  [1, { hipLx: -0.24, hipRx: 0.08, hipLz: 0.32, hipRz: 0.06, knL: 0.1, knR: 0.95, spineX: 0.1, chestY: 0.8, pelvisY: 1.3, headY: 0.15, headX: -0.05, ftRx: 0.95, ftRy: 0.95 }],
 ];
 const KF_BUNT = [
   [0, KF_SWING[0][1]],
@@ -1190,12 +1219,13 @@ const KF_BUNT = [
 // bat path: [t, psi (barrel yaw, 0 = over the plate, + toward pitcher), e (elevation), hands x, y, z] in root frame meters
 // (6th value = extra shoulder turn; hands sit out in front of the chest so the front arm never passes through it)
 export const KB_SWING = [
-  [0, -1.95, 0.82, -0.12, 1.36, 0.28],
-  [0.25, -2.1, 0.78, -0.16, 1.32, 0.24],
-  [0.4, -1.35, 0.25, 0.1, 1.12, 0.32, -0.3],
-  [0.5, 0.0, 0.0, 0.22, 1.0, 0.52, -0.6],
-  [0.62, 1.35, 0.15, 0.4, 1.08, 0.32, -0.45],
-  [1, 2.7, 0.95, 0.1, 1.45, -0.12],
+  [0, -1.95, 0.85, -0.13, 1.37, 0.24],
+  [0.25, -2.15, 0.8, -0.19, 1.37, 0.18],
+  [0.4, -1.55, 0.3, -0.06, 1.18, 0.28, -0.25],
+  [0.5, 0.0, 0.0, 0.22, 1.02, 0.5, -0.6],
+  [0.66, 1.5, 0.12, 0.38, 1.12, 0.3, -0.45],
+  [0.82, 2.8, 0.35, 0.22, 1.42, -0.02, -0.15],
+  [1, 4.4, -0.12, 0.04, 1.5, -0.1],
 ];
 export const KB_BUNT = [[0, -1.95, 0.82, -0.12, 1.36, 0.28], [0.4, 0.15, 0.12, 0.21, 1.05, 0.56, -0.6], [1, 0.15, 0.12, 0.21, 1.05, 0.56, -0.6]];
 function kb(list, t) {
@@ -1208,7 +1238,7 @@ function batPose(P, pose) {
   const m = pose.mode;
   let k;
   if (m === 'swing') k = kb(KB_SWING, pose.t || 0);
-  else if (m === 'stance') k = kb(KB_SWING, (pose.load || 0) * 0.25);
+  else if (m === 'stance') { k = kb(KB_SWING, (pose.load || 0) * 0.25); const w = (1 - (pose.load || 0)) * Math.sin(P.anim.t * 2.4); k[0] += w * 0.1; k[1] += w * 0.05; }
   else if (m === 'bunt') k = kb(KB_BUNT, pose.t || 0);
   else { P.batPivot.visible = false; if (P.hm) P.hm.grip = null; return; }
   P.batPivot.visible = true;

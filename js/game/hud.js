@@ -24,6 +24,8 @@ export class HUD {
     this.btns = el('div', 'hud-btns'); this.root.append(this.btns);
     this.pitchList = el('div', 'pitches'); this.root.append(this.pitchList);
     this.meterEl = el('div', 'meter', '<div class="fill"></div><div class="gold"></div><div class="cur"></div>'); this.root.append(this.meterEl);
+    this.map = el('div', 'minimap', '<canvas></canvas><div class="mm-list"></div>'); this.root.append(this.map);
+    this.mc = this.map.querySelector('canvas'); this.mx = this.mc.getContext('2d'); this.mList = this.map.querySelector('.mm-list'); this.mOn = false; this.mHold = 0; this.mListKey = '';
     this.cardEl = null; this.btnKey = ''; this.hintKey = ''; this.pitchKey = '';
     this.resize(); this._rs = () => this.resize(); addEventListener('resize', this._rs);
   }
@@ -91,9 +93,11 @@ export class HUD {
   // ---------- per frame ----------
   update(dt, device) {
     const G = this.G, E = G.E;
+    if (G.mode !== 'game' && this.mOn) { this.mOn = false; this.map.classList.remove('on'); }
     if (G.mode !== 'game') { this.zx.clearRect(0, 0, this.zc.width, this.zc.height); this.zc.style.visibility = 'hidden'; this.zVis = false; this.setButtons('', device); this.pitchList.style.display = 'none'; this.meterEl.classList.remove('on'); this.hint.style.display = 'none'; return; }
     this.drawBug();
     this.drawZone();
+    this.drawMap(dt);
     const ph = E.phase;
     let ctx = '';
     if (E.userBats && (ph === 'aim' || ph === 'windup' || ph === 'pitch' || ph === 'intro')) ctx = 'bat';
@@ -124,6 +128,97 @@ export class HUD {
       this.meterEl.querySelector('.cur').style.left = (m.v * 100) + '%';
       this.meterEl.querySelector('.fill').style.width = (m.v * 100) + '%';
     } else this.meterEl.classList.remove('on');
+  }
+  // ---------- base-running minimap (shows once the ball is in play) ----------
+  drawMap(dt) {
+    const G = this.G, E = G.E, pl = E.play;
+    const live = !E.derby && G.set.minimap !== false && !G.replay && pl && (pl.kind === 'hit' || pl.kind === 'steal') && (E.phase === 'live' || E.phase === 'dead');
+    if (live && E.phase === 'live') this.mHold = 1.4; else this.mHold -= dt;
+    const show = !!(live && this.mHold > 0);
+    if (show !== this.mOn) { this.mOn = show; this.map.classList.toggle('on', show); }
+    if (!show) return;
+    const cv = this.mc, x = this.mx, d = this.dpr || 1, cw = cv.clientWidth, ch = cv.clientHeight;
+    if (!cw) return;
+    if (cv.width !== Math.round(cw * d) || cv.height !== Math.round(ch * d)) { cv.width = Math.round(cw * d); cv.height = Math.round(ch * d); }
+    x.setTransform(d, 0, 0, d, 0, 0); x.clearRect(0, 0, cw, ch);
+    // world feet -> map: home at the bottom middle, second base near the top (x: 1B side on the right)
+    const X0 = -104, X1 = 104, Z0 = -150, Z1 = 20, sx = cw / (X1 - X0), sz = ch / (Z1 - Z0), s = Math.min(sx, sz);
+    const ox = cw / 2, oz = ch - (Z1) * s - 2;
+    const P = (wx, wz) => [ox + wx * s, oz + wz * s];
+    const BP = [[0, 0], [63.64, -63.64], [0, -127.28], [-63.64, -63.64]];
+    // field: outfield grass wedge, infield dirt, infield grass, base paths
+    x.save();
+    x.fillStyle = '#1f5a34'; x.beginPath(); x.moveTo(...P(0, 0)); x.lineTo(...P(-260, -260)); x.lineTo(...P(260, -260)); x.closePath(); x.fill();
+    x.fillStyle = '#9a6a43'; x.beginPath(); x.arc(...P(0, -60.5), 95 * s, 0, Math.PI * 2); x.fill();
+    x.fillStyle = '#2b7a46'; x.beginPath(); const g = 5; x.moveTo(...P(0, -g)); x.lineTo(...P(63.64 - g, -63.64)); x.lineTo(...P(0, -127.28 + g)); x.lineTo(...P(-63.64 + g, -63.64)); x.closePath(); x.fill();
+    x.fillStyle = '#9a6a43'; x.beginPath(); x.arc(...P(0, -60.5), 9 * s, 0, Math.PI * 2); x.fill();
+    x.beginPath(); x.arc(...P(0, 0), 13 * s, 0, Math.PI * 2); x.fill();
+    x.strokeStyle = '#ffffffb0'; x.lineWidth = 1.2; x.beginPath(); x.moveTo(...P(-150, -150)); x.lineTo(...P(0, 0)); x.lineTo(...P(150, -150)); x.stroke();
+    x.restore();
+    // runners: where each one is, the base he last touched and the base he is heading for
+    const BPd = (i, q) => Math.hypot(q.x - BP[i % 4][0], q.z - BP[i % 4][1]);
+    const atOf = r => { let a = r.at ?? r.lastBase ?? (r.isBatter ? 0 : r.base); if (r.mode === 'run' && r.goal != null && r.goal - 1 > a && r.p && BPd(r.goal, r.p) < 90) a = r.goal - 1; return a; };
+    const T = teamOf(E.st.sides[E.battingSide].team), FT = teamOf(E.st.sides[E.fieldingSide].team);
+    const t = performance.now() / 1000, rs = E.runners.filter(r => !r.scored);
+    const occupied = new Set(), heading = new Set();
+    for (const r of rs) {
+      if (r.out) continue;
+      const at = atOf(r), moving = r.goal != null && r.goal !== at && (r.mode === 'run' || r.mode === 'return' || r.mode === 'half');
+      if (moving) heading.add(r.goal % 4); else occupied.add(at % 4);
+    }
+    // bases
+    BP.forEach(([bx, bz], i) => {
+      const [u, v] = P(bx, bz), r = i === 0 ? 5.5 : 5;
+      x.save(); x.translate(u, v);
+      if (heading.has(i)) { const pulse = 0.5 + 0.5 * Math.sin(t * 9); x.strokeStyle = `rgba(242,193,78,${0.45 + 0.55 * pulse})`; x.lineWidth = 2.5; x.beginPath(); x.arc(0, 0, r + 4 + pulse * 2.5, 0, Math.PI * 2); x.stroke(); }
+      if (i === 0) { x.beginPath(); x.moveTo(-r, -r * 0.6); x.lineTo(r, -r * 0.6); x.lineTo(r, r * 0.2); x.lineTo(0, r); x.lineTo(-r, r * 0.2); x.closePath(); }
+      else { x.rotate(Math.PI / 4); x.beginPath(); x.rect(-r * 0.75, -r * 0.75, r * 1.5, r * 1.5); }
+      x.fillStyle = occupied.has(i) && i ? '#f2c14e' : '#ffffff'; x.fill(); x.lineWidth = 1; x.strokeStyle = '#0008'; x.stroke();
+      x.restore();
+    });
+    // infielders / anyone inside the map (small, fielding team colour)
+    for (const f of Object.values(E.F)) {
+      if (!f.p) continue; const [u, v] = P(f.p.x, f.p.z); if (u < 3 || v < 3 || u > cw - 3 || v > ch - 3) continue;
+      x.fillStyle = FT.c1; x.strokeStyle = '#c9ced8'; x.lineWidth = 1.2; x.beginPath(); x.arc(u, v, 3.4, 0, Math.PI * 2); x.fill(); x.stroke();
+    }
+    // arrows to the next base
+    for (const r of rs) {
+      if (r.out || !r.p) continue;
+      const at = atOf(r);
+      if (r.goal == null || r.goal === at || !(r.mode === 'run' || r.mode === 'return' || r.mode === 'half')) continue;
+      const [u0, v0] = P(r.p.x, r.p.z), [u1, v1] = P(...BP[r.goal % 4]);
+      const dx = u1 - u0, dy = v1 - v0, L = Math.hypot(dx, dy); if (L < 6) continue;
+      x.save(); x.strokeStyle = '#f2c14e'; x.lineWidth = 2; x.setLineDash([4, 3]); x.lineDashOffset = -t * 18;
+      x.beginPath(); x.moveTo(u0, v0); x.lineTo(u1 - dx / L * 7, v1 - dy / L * 7); x.stroke(); x.setLineDash([]);
+      const a = Math.atan2(dy, dx); x.translate(u1 - dx / L * 6, v1 - dy / L * 6); x.rotate(a); x.fillStyle = '#f2c14e'; x.beginPath(); x.moveTo(3, 0); x.lineTo(-4, -4); x.lineTo(-4, 4); x.closePath(); x.fill();
+      x.restore();
+    }
+    // runner dots (batting team colour, white ring); outs get a red X
+    for (const r of rs) {
+      if (!r.p) continue; const [u, v] = P(r.p.x, r.p.z);
+      if (r.out) { x.strokeStyle = '#e5484d'; x.lineWidth = 2.5; x.beginPath(); x.moveTo(u - 4, v - 4); x.lineTo(u + 4, v + 4); x.moveTo(u + 4, v - 4); x.lineTo(u - 4, v + 4); x.stroke(); continue; }
+      x.fillStyle = T.c1; x.strokeStyle = '#fff'; x.lineWidth = 2; x.beginPath(); x.arc(u, v, 5.5, 0, Math.PI * 2); x.fill(); x.stroke();
+    }
+    // ball (clamped to the edge with a pointer when it is out in the outfield)
+    const b = E.ball;
+    if (b && b.p && b.state !== 'none' && b.state !== 'dead') {
+      let [u, v] = P(b.p.x, b.p.z); const cu = Math.max(5, Math.min(cw - 5, u)), cvv = Math.max(5, Math.min(ch - 5, v)), out = cu !== u || cvv !== v;
+      x.fillStyle = '#fff'; x.strokeStyle = '#000'; x.lineWidth = 1.2; x.shadowColor = '#fff'; x.shadowBlur = 6;
+      if (out) { const a = Math.atan2(v - cvv, u - cu); x.save(); x.translate(cu, cvv); x.rotate(a); x.beginPath(); x.moveTo(4, 0); x.lineTo(-3, -4); x.lineTo(-3, 4); x.closePath(); x.fill(); x.stroke(); x.restore(); }
+      else { x.beginPath(); x.arc(u, v, 3.2, 0, Math.PI * 2); x.fill(); x.stroke(); }
+      x.shadowBlur = 0;
+    }
+    // text: who is where and where he is going
+    const BN = ['HOME', '1B', '2B', '3B', 'HOME'];
+    const lines = rs.slice().sort((a, b) => (b.at ?? b.base ?? 0) - (a.at ?? a.base ?? 0)).map(r => {
+      const p = player(r.pid), n = esc(p ? p.ln.toUpperCase() : ''), at = atOf(r);
+      if (r.out) return `<div class="o"><b>${n}</b><span>OUT</span></div>`;
+      const moving = r.goal != null && r.goal !== at && (r.mode === 'run' || r.mode === 'return' || r.mode === 'half');
+      if (moving) return `<div class="r"><b>${n}</b><span>${BN[at]}</span><i></i><em>${BN[r.goal]}</em></div>`;
+      return `<div><b>${n}</b><span>${at === 4 ? 'SCORED' : 'ON ' + BN[at]}</span></div>`;
+    });
+    const key = lines.join('');
+    if (key !== this.mListKey) { this.mListKey = key; this.mList.innerHTML = key; }
   }
   setButtons(ctx, device) {
     const key = ctx + '|' + device + '|' + (this.G.E && this.G.E.meter ? 'm' : '');

@@ -44,6 +44,7 @@ export async function loadHuman() {
   let bodyMesh = null, eyes = null, browMesh = null;
   tpl.traverse(o => { if (o.isSkinnedMesh) { if (/Superhero/i.test(o.material.name)) bodyMesh = o; else if (/Eye/i.test(o.material.name)) eyes = o; else browMesh = o; } });
   reshapeBody(bodyMesh); evenTorso(bodyMesh); drapeJersey(bodyMesh);
+  if (eyes) { const P = eyes.geometry.attributes.position; for (const sg of [-1, 1]) { const c = new THREE.Vector3(); let n = 0; for (let i = 0; i < P.count; i++) if (Math.sign(P.getX(i)) === sg) { c.x += P.getX(i); c.y += P.getY(i); c.z += P.getZ(i); n++; } c.multiplyScalar(1 / (n || 1)); for (let i = 0; i < P.count; i++) if (Math.sign(P.getX(i)) === sg) { P.setXYZ(i, c.x + (P.getX(i) - c.x) * 0.91, c.y + (P.getY(i) - c.y) * 0.91, c.z + (P.getZ(i) - c.z) * 0.91 - 0.0016); } } P.needsUpdate = true; }
   // thinner, more natural eyebrows (the stock ones are thick painted blocks)
   if (browMesh) { const P = browMesh.geometry.attributes.position; for (const sg of [-1, 1]) { let cy = 0, n = 0; for (let i = 0; i < P.count; i++) if (Math.sign(P.getX(i)) === sg) { cy += P.getY(i); n++; } cy /= n || 1; for (let i = 0; i < P.count; i++) if (Math.sign(P.getX(i)) === sg) P.setY(i, cy + (P.getY(i) - cy) * 0.55); } P.needsUpdate = true; }
   // ---- arms-down rest: rotate the arms of the template from T-pose to hanging straight down ----
@@ -134,7 +135,7 @@ function uniformMaterial(skinIdx, U, opt) {
     uUnder: { value: C(U.under || U.trim) }, uBelt: { value: C(U.belt || U.trim) }, uSock: { value: C(U.sock || U.trim) }, uStripe: { value: C(U.sockStripe || U.base) },
     uShoe: { value: C(U.shoe || '#1b1b1f') }, uGlove: { value: C(opt.gloveColor || U.trim) },
     uPin: { value: U.pin ? 1 : 0 }, uPipe: { value: U.piping ? 1 : 0 }, uSleeveEnd: { value: opt.sleeveEnd ?? 0.36 }, uUnderOn: { value: opt.under ? 1 : 0 }, uGloveOn: { value: opt.gloves ? 1 : 0 },
-    uPantsEnd: { value: opt.long ? 0.16 : 0.40 }, uBuild: { value: opt.build || 1 }, uFaceA: { value: new THREE.Vector4(...(opt.face || [0, 0, 0, 0, 0, 0, 0, 0, 0]).slice(0, 4)) }, uFaceB: { value: new THREE.Vector4(...(opt.face || [0, 0, 0, 0, 0, 0, 0, 0, 0]).slice(4, 8)) }, uFaceC: { value: (opt.face || [])[8] || 0 }, uMirror: { value: opt.mirror ? -1 : 1 }, uUmp: { value: opt.ump ? 1 : 0 },
+    uPantsEnd: { value: opt.long ? 0.16 : 0.40 }, uBuild: { value: opt.build || 1 }, uFaceA: { value: new THREE.Vector4(...(opt.face || [0, 0, 0, 0, 0, 0, 0, 0, 0]).slice(0, 4)) }, uFaceB: { value: new THREE.Vector4(...(opt.face || [0, 0, 0, 0, 0, 0, 0, 0, 0]).slice(4, 8)) }, uFaceC: { value: (opt.face || [])[8] || 0 }, uMirror: { value: opt.mirror ? -1 : 1 }, uUmp: { value: opt.ump ? 1 : 0 }, uBeard: { value: opt.beard || 0 }, uHairC: { value: C(opt.hairHex || '#2a1c14') }, uSeed: { value: opt.seed || 0 },
     uDecal: { value: opt.decal || null }, uDecalOn: { value: opt.decal ? 1 : 0 }, uPatch: { value: opt.patch || null }, uPatchOn: { value: opt.patch ? 1 : 0 },
   };
   m.userData.u = u;
@@ -193,7 +194,8 @@ function uniformMaterial(skinIdx, U, opt) {
       .replace('#include <common>', `#include <common>
         varying vec3 vB; varying vec3 vBN;
         uniform vec3 uJersey, uPants, uTrim, uTrim2, uUnder, uBelt, uSock, uStripe, uShoe, uGlove;
-        uniform float uPin, uPipe, uSleeveEnd, uUnderOn, uGloveOn, uPantsEnd, uMirror, uDecalOn, uPatchOn, uUmp;
+        uniform float uPin, uPipe, uSleeveEnd, uUnderOn, uGloveOn, uPantsEnd, uMirror, uDecalOn, uPatchOn, uUmp, uBeard, uSeed; uniform vec3 uHairC;
+        float fhash(vec3 p) { p = fract(p * 0.3183099 + 0.1); p *= 17.0; return fract(p.x * p.y * p.z * (p.x + p.y + p.z)); }
         uniform sampler2D uDecal; uniform sampler2D uPatch;
         float cloth = 0.0;`)
       .replace('#include <map_fragment>', `#include <map_fragment>
@@ -244,12 +246,42 @@ function uniformMaterial(skinIdx, U, opt) {
             } else if (uGloveOn > 0.5 && ax > 0.655) { col = uGlove; c = 1.0; if (ax < 0.675) col = vec3(0.95); }
             else if (uUnderOn > 0.5 && ax < 0.655) { col = uUnder; c = 1.0; }
           }
+          // ---- face detail: eye-socket depth, natural lip tone, beard / stubble painted on the skin ----
+          if (c < 0.5 && y > 1.53 && vB.z > -0.06) {
+            float lum = dot(col, vec3(0.3, 0.55, 0.15));
+            // lips: same hue family as the skin (the base texture paints every tone with pink lips)
+            vec2 lq = vec2(ax / 0.026, (y - 1.615) / 0.0105);
+            float lip = (1.0 - smoothstep(0.7, 1.0, length(lq))) * smoothstep(0.072, 0.082, vB.z);
+            vec3 lipC = mix(vec3(lum), col, 0.55) * vec3(1.02, 0.86, 0.84);
+            col = mix(col, lipC, lip * 0.75);
+            // nose tip: less shiny pink
+            vec3 nt = vec3(ax, y - 1.655, vB.z - 0.105);
+            col = mix(col, mix(vec3(lum), col, 0.7), exp(-dot(nt, nt) / (0.018 * 0.018)) * 0.6);
+            // soft shadow in the eye sockets and under the brow (depth instead of a flat painted face)
+            vec2 eo = vec2(ax - 0.034, (y - 1.701) * 1.35);
+            float sock = exp(-dot(eo, eo) / (0.024 * 0.024)) * smoothstep(0.03, 0.07, vB.z);
+            col *= 1.0 - 0.22 * sock * (1.0 - smoothstep(0.0, 0.012, abs(ax - 0.034) - 0.004 + abs(y - 1.700)));
+            col *= 1.0 - 0.14 * exp(-pow((y - 1.712) / 0.006, 2.0)) * (1.0 - smoothstep(0.045, 0.06, ax)) * smoothstep(0.06, 0.08, vB.z);
+            // beard / stubble zone: jaw line, chin, moustache, sideburns
+            float top = mix(1.636, 1.676, smoothstep(0.03, 0.068, ax));
+            float jawZ = mix(smoothstep(1.566, 1.582, y), smoothstep(1.585, 1.6, y), step(0.0, -vBN.y) * (1.0 - smoothstep(0.03, 0.06, ax)) * 0.0) * smoothstep(1.566, 1.582, y) * (1.0 - smoothstep(top - 0.008, top + 0.004, y)) * smoothstep(-0.035, 0.0, vB.z);
+            float must = smoothstep(1.621, 1.626, y) * (1.0 - smoothstep(1.638, 1.645, y)) * (1.0 - smoothstep(0.026, 0.034, ax)) * smoothstep(0.07, 0.085, vB.z);
+            float lipCut = lip;
+            float bm = clamp(max(jawZ, must) - lipCut * 1.2, 0.0, 1.0);
+            float n = fhash(floor(vB * vec3(1500.0, 520.0, 1500.0)) + uSeed);
+            float n2 = fhash(floor(vB * 420.0) + uSeed * 1.7);
+            float stub = min(uBeard, 0.45), full = smoothstep(0.5, 1.0, uBeard);
+            col = mix(col, col * mix(vec3(1.0), uHairC * 1.4 + 0.25, 0.6) * 0.82, bm * stub * (0.55 + 0.45 * n));
+            col = mix(col, uHairC * 0.7 * (0.7 + 0.6 * n * n2), bm * full * (0.6 + 0.4 * n) * (1.0 - 0.35 * smoothstep(1.6, 1.58, y) * step(vBN.y, -0.2)));
+            // a little pore-scale variation so the skin is not plastic
+            col *= 0.97 + 0.06 * fhash(floor(vB * 900.0));
+          }
           diffuseColor.rgb = col; cloth = c;
         }`)
       .replace('#include <roughnessmap_fragment>', '#include <roughnessmap_fragment>\nroughnessFactor = mix(roughnessFactor, 0.86, cloth);')
       .replace('#include <normal_fragment_maps>', '#include <normal_fragment_maps>\nnormal = normalize(mix(normal, nonPerturbedNormal, cloth * 0.85));');
   };
-  m.customProgramCacheKey = () => 'gsUniform3';
+  m.customProgramCacheKey = () => 'gsUniform4';
   return m;
 }
 
@@ -304,18 +336,18 @@ export function attachHuman(P, o) {
   const decal = o.team || o.U.key === 'ump' ? new THREE.CanvasTexture(decalCanvas(o.card, o.U, o.team, o.chestLogo)) : null;
   if (decal) { decal.flipY = false; decal.colorSpace = THREE.SRGBColorSpace; decal.anisotropy = 4; }
   const patch = o.patchCanvas ? new THREE.CanvasTexture(o.patchCanvas) : null; if (patch) patch.colorSpace = THREE.SRGBColorSpace;
-  body.material = uniformMaterial(o.skinIdx, o.U, { decal, patch, mirror: o.lefty, gloves: o.gloves, gloveColor: o.gloveColor, under: o.under, long: o.long, ump: o.U.key === 'ump', sleeveEnd: o.sleeveEnd, build: Math.max(0.92, Math.min(1.2, o.look.build || 1)), face: faceParams(o.card && o.card.id) });
-  eyes.material = new THREE.MeshStandardMaterial({ map: H.eyeT, roughness: 0.2 });
+  body.material = uniformMaterial(o.skinIdx, o.U, { decal, patch, mirror: o.lefty, gloves: o.gloves, gloveColor: o.gloveColor, under: o.under, long: o.long, ump: o.U.key === 'ump', sleeveEnd: o.sleeveEnd, build: Math.max(0.92, Math.min(1.2, o.look.build || 1)), face: faceParams(o.card && o.card.id), beard: faceHair(o), hairHex: o.hairHex, seed: (faceParams(o.card && o.card.id)[0] + 1) * 37 });
+  eyes.material = new THREE.MeshStandardMaterial({ map: H.eyeT, roughness: 0.3, color: '#d8d2cc' });
   const hairC = new THREE.Color(o.hairHex || '#2a1c14');
-  brows.material = new THREE.MeshStandardMaterial({ color: hairC.clone().multiplyScalar(0.85).lerp(new THREE.Color('#6b4a36'), 0.18), roughness: 0.95, transparent: true, opacity: 0.88 });
+  brows.material = new THREE.MeshStandardMaterial({ color: hairC.clone().multiplyScalar(0.85).lerp(new THREE.Color('#6b4a36'), 0.18), roughness: 0.95, transparent: true, opacity: 0.8 });
   brows.castShadow = false; eyes.castShadow = false;
   // hair + beard on the head bone (caps sit on top)
   const hm = new THREE.MeshStandardMaterial({ color: hairC, map: H.hairT, roughness: 0.85, side: THREE.DoubleSide });
   let style = HAIRSTYLE[o.look.hair] ?? 'buzz'; if (o.headgear && o.headgear !== 'none') style = o.look.hair === 'bald' ? null : 'buzz';
   const head = bones.Head;
   if (globalThis.__noHair) style = null;
-  if (style && H.hair[style]) { const h = new THREE.Mesh(H.hair[style], hm); h.castShadow = true; head.add(h); }
-  if (o.look.beard && H.hair.beard) head.add(new THREE.Mesh(H.hair.beard, hm));
+  if (style && H.hair[style]) { const h = new THREE.Mesh(H.hair[style], hm); h.castShadow = true; const fw = faceParams(o.card && o.card.id)[5]; h.scale.set(1.012 + Math.max(0, 0.034 * fw), 1.006, 1.01); head.add(h); }
+  if (globalThis.__meshBeard && o.look.beard && H.hair.beard) head.add(new THREE.Mesh(H.hair.beard, hm)); // beards are painted on now (faceHair)
   P.flip.add(root);
   // retarget bookkeeping
   const order = []; root.traverse(b => { if (b.isBone) order.push(b); });
@@ -435,6 +467,13 @@ function drapeJersey(mesh) {
 }
 
 // nine face-shape knobs in -1..1, fixed per player (from his id) so he always looks the same
+// facial hair amount: 0 = clean, ~0.15-0.45 = stubble, 1 = full beard (painted in the skin shader)
+function faceHair(o) {
+  if (o.U && o.U.key === 'ump') return 0.25;
+  if (o.look && o.look.beard) return 0.75 + 0.25 * Math.abs(faceParams((o.card && o.card.id) + 'b')[1]);
+  const u = Math.abs(faceParams((o.card && o.card.id) + 's')[2]);
+  return u < 0.3 ? 0 : 0.12 + u * 0.33;
+}
 function faceParams(id) {
   let h = 2166136261; for (const ch of String(id ?? '')) { h ^= ch.charCodeAt(0); h = Math.imul(h, 16777619); }
   const out = []; for (let i = 0; i < 9; i++) { h = Math.imul(h ^ (h >>> 15), 2246822507); h = Math.imul(h ^ (h >>> 13), 3266489909); h ^= h >>> 16; const u = (h >>> 0) / 4294967296; out.push((u * 2 - 1) * (0.5 + 0.5 * Math.abs(u * 2 - 1))); }

@@ -15,6 +15,7 @@ export const Settings = Object.assign({
   strikeZone: true,
   logos: 'real',        // real (MLB logos from MLB's CDN at runtime) | classic (our own badges)
   camFollow: true,
+  minimap: true,        // base-running map when the ball is in play
   replays: true,        // instant replays of homers and diving catches      // camera chases the ball after contact
 }, (() => { try { return JSON.parse(localStorage.getItem(PRE + 'settings') || '{}'); } catch (e) { return {}; } })());
 // v2.2: the batting camera became the catcher's-eye zone view - move everyone onto it once

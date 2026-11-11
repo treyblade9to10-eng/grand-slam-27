@@ -204,3 +204,18 @@
 /* no pinch / double-tap zoom or page panning while playing; cards and menus can still scroll */
 #game{touch-action:none;-webkit-touch-callout:none;overscroll-behavior:none}
 #game .card,#game .pause-menu .in{touch-action:pan-y}
+
+/* base-running minimap */
+.minimap{position:absolute;left:max(12px,env(safe-area-inset-left));bottom:max(14px,env(safe-area-inset-bottom));display:flex;align-items:flex-end;gap:0;opacity:0;transform:translateY(12px);transition:opacity .2s,transform .2s;filter:drop-shadow(0 6px 14px rgba(0,0,0,.5))}
+.minimap.on{opacity:1;transform:none}
+#game .hud .minimap canvas{position:static;inset:auto;width:176px;height:150px;display:block;background:linear-gradient(180deg,#151b26f0,#0b0f16f0);border-radius:6px 0 0 6px;box-shadow:inset 0 0 0 1px #ffffff18}
+.minimap .mm-list{display:flex;flex-direction:column;gap:3px;background:#0b0f16e8;border-radius:0 6px 6px 0;padding:7px 10px;min-width:118px;box-shadow:inset 0 0 0 1px #ffffff10;font:700 13px 'Barlow Condensed';letter-spacing:.5px;color:#c9ced8}
+.minimap .mm-list:empty{display:none}
+.minimap .mm-list div{display:flex;align-items:center;gap:6px;white-space:nowrap}
+.minimap .mm-list b{font:900 italic 15px 'Barlow Condensed';color:#fff;min-width:54px}
+.minimap .mm-list em{font-style:normal;color:#f2c14e;font-weight:900}
+.minimap .mm-list i{width:14px;height:2px;background:#f2c14e;position:relative}
+.minimap .mm-list i::after{content:'';position:absolute;right:-1px;top:-3px;border-left:6px solid #f2c14e;border-top:4px solid transparent;border-bottom:4px solid transparent}
+.minimap .mm-list .o span{color:#e5484d;font-weight:900}
+.minimap canvas:only-child{border-radius:6px}
+@media (max-height:500px),(max-width:700px){#game .hud .minimap canvas{width:132px;height:113px}.minimap .mm-list{font-size:11px;padding:5px 8px;min-width:96px}.minimap .mm-list b{font-size:13px;min-width:44px}}
