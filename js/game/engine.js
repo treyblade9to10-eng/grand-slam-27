@@ -246,9 +246,11 @@ export class Engine {
     }
     const I = this.in;
     if (I.abs && I.absFor === 'pci') { this.pci.x = clamp(I.abs.x, -1.5, 1.5); this.pci.y = clamp(I.abs.y, 0.9, 4.1); }
-    else { this.pci.x = clamp(this.pci.x + I.stick.x * dt * 2.6, -1.5, 1.5); this.pci.y = clamp(this.pci.y + I.stick.y * dt * 2.6, 0.9, 4.1); }
+    else { this.pci.x = clamp(this.pci.x + I.stick.x * dt * 4.2, -1.5, 1.5); this.pci.y = clamp(this.pci.y + I.stick.y * dt * 4.2, 0.9, 4.1); }
     if (this.set.pci === 'assist' && this.phase === 'pitch') { // drift toward where the ball will cross
-      const c = this.curPitch.path.at(1), k = this.D.assist * dt * 3.2;
+      // keyboard players who aren't steering get a much stronger pull (aiming with keys is hard)
+      const steer = Math.abs(I.stick.x) + Math.abs(I.stick.y) > 0 || (I.abs && I.absFor === 'pci');
+      const c = this.curPitch.path.at(1), k = Math.min(1, this.D.assist * dt * (I.keys && !steer ? 9 : 3.2));
       this.pci.x += (c.x - this.pci.x) * k; this.pci.y += (c.y - this.pci.y) * k;
     }
   }

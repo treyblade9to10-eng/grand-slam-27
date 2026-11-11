@@ -1,6 +1,7 @@
 // MLB Grand Slam 27 - 3D ballplayers (skinned bodies from HUCK), faces, uniforms, gear, animation
 import * as THREE from '../lib/three.min.js';
 import * as HUM from './human.js';
+import * as MC from './mocap.js';
 import { logoImg, loadLogo, onLogo, realLogos } from '../logos.js';
 import { Settings } from '../store.js';
 export const SKINS = ['#f0cfb6', '#e2ba9e', '#cfa083', '#bb8766', '#a67353', '#8e5e42', '#7a4c34', '#68402b'];
@@ -1008,6 +1009,14 @@ export function animate(P, pose, dt) {
   const groundY = LEN.hipOff + ext + LEN.ankleH;
   const y = T.bodyY ?? groundY;
   P.body.position.y += (y - P.body.position.y) * (T.bodyY != null ? k : 1);
+  // real motion capture for the delivery and the swing (body only for the swing: the arms stay on the bat)
+  let mocapOn = false;
+  if (P.hm && MC.CLIPS.swing && !globalThis.__noMocap) {
+    if (m === 'pitch' || m === 'set') mocapOn = MC.applyMocap(P, 'pitch', m === 'set' ? 0 : pose.t || 0);
+    else if (m === 'swing' || m === 'stance') mocapOn = MC.applyMocap(P, 'swing', m === 'stance' ? (pose.load || 0) * 0.25 : pose.t || 0, 'body');
+  }
+  P._mocap = mocapOn;
+  if (!mocapOn && P.hm) { const J0 = HUM.J.pelvis; P.body.position.x += (J0[0] - P.body.position.x) * k; P.body.position.z += (J0[2] - P.body.position.z) * k; }
   if (P.batPivot) batPose(P, pose);
   if (P.hm) {
     const a = P._arm || (P._arm = new Float32Array(6)), L = P.shL.rotation, R = P.shR.rotation;
@@ -1204,6 +1213,11 @@ function batPose(P, pose) {
   else { P.batPivot.visible = false; if (P.hm) P.hm.grip = null; return; }
   P.batPivot.visible = true;
   let [psi, e, hx, hy, hz] = k;
+  if (P._mocap && m !== 'bunt') { // hands ride with the mocap body: grip at the middle of the batter's wrists
+    const st = m === 'stance' ? (pose.load || 0) * 0.25 : pose.t || 0;
+    const g = MC.mocapHands('swing', st, _h0);
+    if (g) { const w = globalThis.__gripMix ?? 0.75; hx = mix(hx, g.x, w); hy = mix(hy, g.y, w); hz = mix(hz, g.z, w); }
+  }
   if (m === 'swing' || m === 'bunt') { // aim the barrel at the pitch near contact (pose.dy meters, + = high; pose.dz = reach)
     const near = Math.max(0, 1 - Math.abs((pose.t || 0) - 0.5) / 0.22);
     const dy = pose.dy || 0;
@@ -1261,4 +1275,4 @@ function ikArm(P, side, target, pole) {
 
 // Real human body meshes are loaded once before a game starts (see human.js). Safe to call many times.
 let _modelsP = null;
-export function loadModels() { if (!_modelsP) _modelsP = HUM.loadHuman().catch(e => { console.warn('human model failed, using fallback', e); return null; }); return _modelsP; }
+export function loadModels() { if (!_modelsP) _modelsP = Promise.all([HUM.loadHuman(), MC.loadMocap().catch(e => console.warn('mocap failed', e))]).then(r => r[0]).catch(e => { console.warn('human model failed, using fallback', e); return null; }); return _modelsP; }

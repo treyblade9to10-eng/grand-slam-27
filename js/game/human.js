@@ -44,6 +44,8 @@ export async function loadHuman() {
   let bodyMesh = null, eyes = null, browMesh = null;
   tpl.traverse(o => { if (o.isSkinnedMesh) { if (/Superhero/i.test(o.material.name)) bodyMesh = o; else if (/Eye/i.test(o.material.name)) eyes = o; else browMesh = o; } });
   reshapeBody(bodyMesh); evenTorso(bodyMesh); drapeJersey(bodyMesh);
+  // thinner, more natural eyebrows (the stock ones are thick painted blocks)
+  if (browMesh) { const P = browMesh.geometry.attributes.position; for (const sg of [-1, 1]) { let cy = 0, n = 0; for (let i = 0; i < P.count; i++) if (Math.sign(P.getX(i)) === sg) { cy += P.getY(i); n++; } cy /= n || 1; for (let i = 0; i < P.count; i++) if (Math.sign(P.getX(i)) === sg) P.setY(i, cy + (P.getY(i) - cy) * 0.55); } P.needsUpdate = true; }
   // ---- arms-down rest: rotate the arms of the template from T-pose to hanging straight down ----
   const down = new THREE.Vector3(0, -1, 0), a = new THREE.Vector3(), b = new THREE.Vector3(), q = new THREE.Quaternion(), pq = new THREE.Quaternion();
   for (const s of ['l', 'r']) for (const [n, c] of [['upperarm_' + s, 'lowerarm_' + s], ['lowerarm_' + s, 'hand_' + s]]) {
@@ -305,7 +307,7 @@ export function attachHuman(P, o) {
   body.material = uniformMaterial(o.skinIdx, o.U, { decal, patch, mirror: o.lefty, gloves: o.gloves, gloveColor: o.gloveColor, under: o.under, long: o.long, ump: o.U.key === 'ump', sleeveEnd: o.sleeveEnd, build: Math.max(0.92, Math.min(1.2, o.look.build || 1)), face: faceParams(o.card && o.card.id) });
   eyes.material = new THREE.MeshStandardMaterial({ map: H.eyeT, roughness: 0.2 });
   const hairC = new THREE.Color(o.hairHex || '#2a1c14');
-  brows.material = new THREE.MeshStandardMaterial({ color: hairC.clone().multiplyScalar(0.8), roughness: 0.9 });
+  brows.material = new THREE.MeshStandardMaterial({ color: hairC.clone().multiplyScalar(0.85).lerp(new THREE.Color('#6b4a36'), 0.18), roughness: 0.95, transparent: true, opacity: 0.88 });
   brows.castShadow = false; eyes.castShadow = false;
   // hair + beard on the head bone (caps sit on top)
   const hm = new THREE.MeshStandardMaterial({ color: hairC, map: H.hairT, roughness: 0.85, side: THREE.DoubleSide });

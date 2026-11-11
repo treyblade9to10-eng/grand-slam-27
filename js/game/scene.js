@@ -7,7 +7,7 @@ export function gfxLevel() {
   if (Settings.gfx === 'high') return 'high';
   if (Settings.gfx === 'fast') return 'fast';
   const mobile = /iPhone|iPad|Android|CrOS/i.test(navigator.userAgent) || (navigator.hardwareConcurrency || 8) <= 4;
-  return mobile ? 'fast' : 'high';
+  return mobile ? 'medium' : 'high'; // phones / Chromebooks: lighter park detail, but still smooth edges + shadows
 }
 const SKY = {
   day: { top: '#3a7bd5', mid: '#8fbfe8', bot: '#dfe9f0', sun: '#fff4e0', sunI: 2.6, hemi: 1.1, fog: '#c7d8e6', exp: 1.0 },
@@ -16,11 +16,12 @@ const SKY = {
   dome: { top: '#cfd2d6', mid: '#cfd2d6', bot: '#cfd2d6', sun: '#fffaf0', sunI: 2.0, hemi: 0.95, fog: '#b9bcc2', exp: 1.0 },
 };
 export function makeStage(container, parkId, pk, team, time) {
-  const level = gfxLevel(), fast = level === 'fast';
-  const renderer = new THREE.WebGLRenderer({ antialias: !fast, powerPreference: 'high-performance' });
-  renderer.setPixelRatio(Math.min(window.devicePixelRatio || 1, fast ? 1.5 : 2));
+  const level = gfxLevel(), fast = level !== 'high', bare = level === 'fast';
+  const renderer = new THREE.WebGLRenderer({ antialias: !bare, powerPreference: 'high-performance' });
+  const dprCap = bare ? 1.25 : fast ? 1.75 : 2;
+  renderer.setPixelRatio(Math.min(window.devicePixelRatio || 1, dprCap));
   renderer.outputColorSpace = THREE.SRGBColorSpace; renderer.toneMapping = THREE.ACESFilmicToneMapping;
-  renderer.shadowMap.enabled = !fast; renderer.shadowMap.type = THREE.PCFSoftShadowMap;
+  renderer.shadowMap.enabled = !bare; renderer.shadowMap.type = THREE.PCFSoftShadowMap;
   container.append(renderer.domElement);
   const scene = new THREE.Scene();
   const park = new Park(parkId, pk, team, { fast, time });
@@ -47,7 +48,7 @@ export function makeStage(container, parkId, pk, team, time) {
   if (time === 'night' || park.closed) sun.position.set(80, 420, 160); else if (time === 'dusk') sun.position.set(-480, 260, 220); else sun.position.set(-300, 420, 160); // afternoon sun over the 3B stands: shade creeps onto the third base side
   sun.target.position.set(0, 0, -100); scene.add(sun, sun.target);
   if (renderer.shadowMap.enabled) {
-    sun.castShadow = true; sun.shadow.mapSize.set(4096, 4096);
+    sun.castShadow = true; sun.shadow.mapSize.set(fast ? 2048 : 4096, fast ? 2048 : 4096);
     const c = sun.shadow.camera; c.left = -330; c.right = 330; c.top = 340; c.bottom = -340; c.near = 50; c.far = 1600; sun.shadow.bias = -0.0005; sun.shadow.normalBias = 0.6;
   }
   if (time === 'night' && !park.closed) { // light banks all around: two soft fills from the outfield corners
@@ -59,16 +60,26 @@ export function makeStage(container, parkId, pk, team, time) {
   const camera = new THREE.PerspectiveCamera(45, 1, 0.5, 12000);
   let lastW = 0, lastH = 0, lastDpr = 0;
   const resize = () => {
-    const w = container.clientWidth || innerWidth, h = container.clientHeight || innerHeight, dpr = Math.min(window.devicePixelRatio || 1, fast ? 1.5 : 2);
+    const w = container.clientWidth || innerWidth, h = container.clientHeight || innerHeight, dpr = Math.min(window.devicePixelRatio || 1, stage.dprCap);
     const cv = renderer.domElement;
     if (w === lastW && h === lastH && dpr === lastDpr && cv.width === Math.floor(w * dpr) && Math.abs(camera.aspect - w / h) < 1e-3) return false;
     lastW = w; lastH = h; lastDpr = dpr;
     renderer.setPixelRatio(dpr); renderer.setSize(w, h, false); camera.aspect = w / h; camera.updateProjectionMatrix();
     return true;
   };
+  // image-based light: a blurred copy of the sky + stadium lights, so skin, helmets and leather pick up soft reflections
+  try {
+    const envScene = new THREE.Scene(); envScene.add(new THREE.Mesh(new THREE.SphereGeometry(10, 24, 12), skyM.clone()));
+    const glowM = new THREE.MeshBasicMaterial({ color: time === 'night' ? '#fff6e6' : '#ffffff' });
+    for (let i = 0; i < 6; i++) { const a = i / 6 * Math.PI * 2, q = new THREE.Mesh(new THREE.PlaneGeometry(3, 1.2), glowM); q.position.set(Math.cos(a) * 8, 4, Math.sin(a) * 8); q.lookAt(0, 0, 0); envScene.add(q); }
+    const ground = new THREE.Mesh(new THREE.CircleGeometry(10, 24), new THREE.MeshBasicMaterial({ color: '#2f5a2c' })); ground.rotation.x = -Math.PI / 2; ground.position.y = -1; envScene.add(ground);
+    const pm = new THREE.PMREMGenerator(renderer); scene.environment = pm.fromScene(envScene, 0.04).texture; pm.dispose();
+    scene.environmentIntensity = time === 'night' ? 0.35 : 0.45;
+  } catch (e) { console.warn('env map', e); }
+  const stage = { dprCap };
   resize(); window.addEventListener('resize', resize);
   return {
-    renderer, scene, camera, park, sun, level, resize,
+    renderer, stage, lowerRes() { if (stage.dprCap > 1) { stage.dprCap = Math.max(1, stage.dprCap - 0.5); lastDpr = 0; resize(); return true; } return false; }, scene, camera, park, sun, level, resize,
     dispose() {
       window.removeEventListener('resize', resize);
       renderer.dispose(); renderer.forceContextLoss?.(); renderer.domElement.remove();

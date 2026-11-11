@@ -332,7 +332,10 @@ class LiveGame {
   loop(now) {
     if (!this.running) return;
     requestAnimationFrame(this.loop);
-    let dt = Math.min(0.05, (now - this.last) / 1000); this.last = now; if (FIXED) dt = FIXED; this.t += dt;
+    const rdt = (now - this.last) / 1000;
+    let dt = Math.min(0.05, rdt); this.last = now; if (FIXED) dt = FIXED; this.t += dt;
+    // slow device: drop the render resolution a step (checked every 4 s of play, at most a couple of times)
+    if (!FIXED && rdt < 0.5) { const F = this._fps || (this._fps = { t: 0, n: 0 }); F.t += rdt; F.n++; if (F.t > 4) { if (F.n / F.t < 38 && this.stage.lowerRes) this.stage.lowerRes(); F.t = 0; F.n = 0; } }
     // phones fire 'resize' before a rotation finishes - re-check the real size every frame
     if (this.stage.resize()) this.camCut = true;
     this.hud.resize();
@@ -354,7 +357,7 @@ class LiveGame {
     if (!this.replay && this.mode === 'game' && !this.paused) {
       const E = this.E;
       // feed input
-      E.in.stick = inp.stick; E.in.press = { ...E.in.press, ...inp.press };
+      E.in.stick = inp.stick; E.in.press = { ...E.in.press, ...inp.press }; E.in.keys = inp.device === 'keys';
       if (inp.rel && (inp.rel.x || inp.rel.y) && this.hud.W) { // touch drag -> relative aim (about 120px per foot)
         const k = 1 / Math.max(60, this.hud.W * 0.16);
         const t = E.userPitches && !E.userBats ? E.aim : E.pci;

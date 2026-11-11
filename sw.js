@@ -1,5 +1,5 @@
 // network-first so updates show up right away; falls back to cache offline
-const CACHE = 'gs27-v2.4.1';
+const CACHE = 'gs27-v2.5.0';
 self.addEventListener('install', e => self.skipWaiting());
 self.addEventListener('activate', e => e.waitUntil(caches.keys().then(ks => Promise.all(ks.filter(k => k !== CACHE).map(k => caches.delete(k)))).then(() => self.clients.claim())));
 self.addEventListener('fetch', e => {

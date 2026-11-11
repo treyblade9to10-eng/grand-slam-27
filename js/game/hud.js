@@ -134,8 +134,8 @@ export class HUD {
     // key hints for keyboard / controller
     const K = (k, pad) => device === 'pad' ? `<span class="k pa ${pad.toLowerCase()}">${pad}</span>` : `<span class="k">${k}</span>`;
     let hint = '';
-    if (ctx === 'bat') hint = device === 'pad' ? `${K('', 'A')}SWING ${K('', 'B')}POWER ${K('', 'X')}BUNT <span class="k">L-STICK</span>AIM <span class="k">LB</span>STEAL` : `${K('SPACE')}SWING ${K('K')}POWER ${K('L')}BUNT ${K('WASD')}AIM ${K('Q')}STEAL`;
-    if (ctx === 'pitch') hint = device === 'pad' ? `<span class="k">LB/RB</span>PITCH <span class="k">L-STICK</span>AIM ${K('', 'A')}THROW, THEN ${K('', 'A')} IN THE GOLD` : `${K('1-5')}PITCH ${K('WASD')}AIM ${K('SPACE')}THROW, THEN ${K('SPACE')} IN THE GOLD`;
+    if (ctx === 'bat') hint = device === 'pad' ? `${K('', 'A')}SWING ${K('', 'B')}POWER ${K('', 'X')}BUNT <span class="k">L-STICK</span>AIM <span class="k">LB</span>STEAL` : `${K('SPACE')}SWING ${K('K')}POWER ${K('L')}BUNT ${K('ARROWS')}AIM (OPTIONAL) ${K('Q')}STEAL ${K('CLICK')}SWING`;
+    if (ctx === 'pitch') hint = device === 'pad' ? `<span class="k">LB/RB</span>PITCH <span class="k">L-STICK</span>AIM ${K('', 'A')}THROW, THEN ${K('', 'A')} IN THE GOLD` : `${K('1-5')}PITCH ${K('ARROWS')}AIM ${K('SPACE')}THROW, THEN ${K('SPACE')} IN THE GOLD`;
     if (ctx === 'throw') hint = device === 'pad' ? `THROW TO: ${K('', 'B')}1B ${K('', 'Y')}2B ${K('', 'X')}3B ${K('', 'A')}HOME <span class="k">LB</span>CUT` : `THROW TO: <span class="k">&rarr;</span>1B <span class="k">&uarr;</span>2B <span class="k">&larr;</span>3B <span class="k">&darr;</span>HOME ${K('C')}CUT`;
     if (ctx === 'run') hint = device === 'pad' ? `<span class="k">RT</span>SEND RUNNERS <span class="k">LT</span>BACK` : `${K('E')}SEND RUNNERS ${K('R')}BACK`;
     this.hint.innerHTML = hint; this.hint.style.display = hint && !touch ? 'flex' : 'none';

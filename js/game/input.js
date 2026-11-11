@@ -56,8 +56,9 @@ export class Input {
     if (this.edge.has('Mouse0')) { out.press.swing = out.press.throw = true; }
     if (this.edge.has('Mouse2')) out.press.power = true;
     const d = c => this.down.has(c);
-    out.stick.x = (d('KeyD') ? 1 : 0) - (d('KeyA') ? 1 : 0);
-    out.stick.y = (d('KeyW') ? 1 : 0) - (d('KeyS') ? 1 : 0);
+    // aim: WASD or the arrow keys (arrows only throw to bases while a play is live)
+    out.stick.x = (d('KeyD') || d('ArrowRight') ? 1 : 0) - (d('KeyA') || d('ArrowLeft') ? 1 : 0);
+    out.stick.y = (d('KeyW') || d('ArrowUp') ? 1 : 0) - (d('KeyS') || d('ArrowDown') ? 1 : 0);
     if (d('ShiftLeft') || d('ShiftRight')) { if (out.press.goAll) out.press.goAll = true; }
     // gamepad
     const pads = navigator.getGamepads ? [...navigator.getGamepads()].filter(Boolean) : [];
