@@ -369,3 +369,11 @@ table.t td.n,table.t th.n{text-align:right;font-variant-numeric:tabular-nums}
   .tm-foot .x{display:none}
   .tm-mu .lg{top:8%}
 }
+
+/* favorite team: first-visit prompt + settings row */
+.favm .pickh h2{font-size:clamp(18px,3.4vw,28px)}
+.favm .favsub{font:600 14px 'Barlow',sans-serif;color:#aab3c2;margin-top:4px;letter-spacing:.2px}
+.favrow{display:flex;align-items:center;gap:12px;flex-wrap:wrap}
+.favrow .lbl{font:800 italic 15px 'Barlow Condensed',sans-serif;letter-spacing:1px;color:#aab3c2;min-width:150px}
+.favrow .favt{display:inline-flex;align-items:center;gap:8px;padding:4px 12px 4px 6px;background:var(--c1,#1b2233);font:900 italic 18px 'Barlow Condensed',sans-serif;letter-spacing:.5px;color:#fff;transform:skewX(-8deg)}
+.favrow .favt > *{transform:skewX(8deg)}

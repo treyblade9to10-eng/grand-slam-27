@@ -82,6 +82,7 @@ register('title', async (el) => {
       h('span', {}, h('span', { class: 'x' }, 'ALL 30 CLUBS  ·  '), `REAL ROSTERS AS OF ${DB.DATA_DATE}`, h('span', { class: 'x' }, '  ·  ALL 30 BALLPARKS')),
       h('span', { class: 'v' }, VERSION))));
   setTimeout(() => navFocus(play, true), 40);
+  if (!Settings.favAsked) setTimeout(() => { if (document.contains(play)) pickFavorite(id => { if (id) render(); }); }, 700);
   if (slot) import('./season/season.js').then(async SE => {
     const { standings } = await import('./season/stats.js');
     const S = SE.loadSeason(slot); if (!S || !document.contains(season)) return;
@@ -95,7 +96,7 @@ register('title', async (el) => {
   try {
     const m = await import('./game/titlebg.js');
     if (!document.contains(bg)) return;
-    const tb = window.__titleBg = m.titleBg(bg);
+    const tb = window.__titleBg = m.titleBg(bg, Settings.fav && DB.team(Settings.fav) ? Settings.fav : null);
     if (tb.id) live.append(h('span', { class: 'k' }, WHEN[tb.time] || 'TONIGHT'), h('span', { class: 'pk' }, DB.park(tb.id).name), badge(DB.team(tb.id), 26));
     live.classList.add('on');
   } catch (e) { console.warn(e); }
@@ -106,6 +107,22 @@ register('title', async (el) => {
 // the card slides out / in (transform + opacity only). Options strip + PLAY BALL underneath.
 const rnd5 = () => Math.random() * 5 | 0;
 const QP = { away: 'LAD', home: 'NYY', user: 'home', time: 'night', park: null, innings: Settings.innings, sp: { away: rnd5(), home: rnd5() } };
+// biggest rival for each club: PLAY NOW starts as favorite (home) vs rival (away)
+export const RIVAL = { NYY: 'BOS', BOS: 'NYY', LAD: 'SF', SF: 'LAD', CHC: 'STL', STL: 'CHC', NYM: 'PHI', PHI: 'NYM', ATL: 'NYM', MIA: 'TB', TB: 'MIA',
+  WSH: 'BAL', BAL: 'WSH', CWS: 'CHC', CLE: 'DET', DET: 'CLE', KC: 'STL', MIN: 'MIL', MIL: 'MIN', CIN: 'CLE', PIT: 'PHI', HOU: 'TEX', TEX: 'HOU',
+  SEA: 'SD', SD: 'LAD', ATH: 'SF', LAA: 'LAD', AZ: 'LAD', COL: 'AZ', TOR: 'NYY' };
+function favMatchup() { const f = Settings.fav; if (!f || !DB.team(f)) return; QP.home = f; QP.away = RIVAL[f] || 'LAD'; QP.park = null; QP.user = 'home'; }
+favMatchup();
+// favorite-team picker (first visit, and from Settings)
+export function pickFavorite(after) {
+  const m = modal('', { locked: true }); m.el.classList.add('pickm', 'favm');
+  const finish = (id) => { Settings.favAsked = 1; if (id) Settings.fav = id; saveSettings(); m.close(); if (id) favMatchup(); after && after(id); };
+  m.el.append(h('div', { class: 'pickh' }, h('div', {}, h('h2', {}, 'WOULD YOU LIKE TO SET YOUR FAVORITE TEAM?'),
+      h('div', { class: 'favsub' }, 'Your ballpark shows on the main menu, and PLAY NOW starts with your team at home against its rival.')),
+    h('button', { class: 'btn ghost small', onclick: () => finish(null) }, 'NOT NOW')),
+    divisionGrid(Settings.fav, id => finish(id), { sub: t => t.name.toUpperCase() }));
+  setTimeout(() => navFocus(m.el.querySelector('.tbtn.on') || m.el.querySelector('.tbtn')), 30);
+}
 const TEAM_ORDER = () => DB.TEAMS.slice().sort((a, b) => a.city.localeCompare(b.city) || a.name.localeCompare(b.name)).map(t => t.id);
 const other = side => side === 'away' ? 'home' : 'away';
 const chev = d => h('span', { class: 'chev' + (d < 0 ? ' l' : '') });
@@ -299,6 +316,9 @@ register('settings', (el) => {
     const set = (k, v) => { Settings[k] = v; saveSettings(); draw(); };
     el.append(topBar('SETTINGS', ''), h('div', { class: 'wrapc' }, h('h1', {}, 'SETTINGS'),
       h('div', { class: 'panel grid', style: 'gap:16px;margin-top:12px' },
+        h('div', { class: 'favrow' }, h('span', { class: 'lbl' }, 'FAVORITE TEAM'),
+          Settings.fav && DB.team(Settings.fav) ? h('span', { class: 'favt', ...tv(DB.team(Settings.fav)) }, badge(DB.team(Settings.fav), 28), DB.team(Settings.fav).name.toUpperCase()) : h('span', { class: 'muted' }, 'NONE'),
+          h('button', { class: 'btn small', onclick: () => pickFavorite(() => draw()) }, Settings.fav ? 'CHANGE' : 'SET')),
         optRow('DIFFICULTY', [['rookie', 'ROOKIE'], ['pro', 'PRO'], ['allstar', 'ALL-STAR'], ['legend', 'LEGEND']], Settings.diff, v => set('diff', v)),
         optRow('SWING AIM', [['timing', 'TIMING ONLY'], ['assist', 'ASSISTED'], ['manual', 'MANUAL']], Settings.pci, v => set('pci', v)),
         h('div', { class: 'muted', style: 'font-size:13px;margin-top:-8px' }, 'Timing only: just swing on time. Assisted: you aim, it helps. Manual: full control.'),

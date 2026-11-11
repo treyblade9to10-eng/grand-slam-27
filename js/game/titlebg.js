@@ -2,8 +2,8 @@
 import { makeStage } from './scene.js';
 import * as DB from '../db.js';
 import * as THREE from '../lib/three.min.js';
-export function titleBg(el) {
-  const ids = DB.TEAMS.map(t => t.id), id = ids[Math.random() * ids.length | 0];
+export function titleBg(el, fav = null) {
+  const ids = DB.TEAMS.map(t => t.id), id = fav || ids[Math.random() * ids.length | 0]; // favorite team's park when one is set
   const time = ['night', 'night', 'dusk', 'day'][Math.random() * 4 | 0];
   const st = makeStage(el, id, DB.park(id), DB.team(id), time);
   let run = true, a = Math.random() * 6, last = performance.now();
