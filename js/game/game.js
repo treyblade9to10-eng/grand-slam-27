@@ -115,7 +115,7 @@ class LiveGame {
       else if (f.n === 1 && (ph === 'pitch' || ph === 'post_pitch') && E.pt < 0.5) { pose = { mode: 'pitch', t: Math.min(1, PITCH_RELEASE + E.pt * 0.9), snap: true }; a.root.rotation.y = 0; }
       else if (f.n === 2 && ph !== 'live' && ph !== 'dead') { pose = { mode: 'squat' }; a.root.rotation.y = Math.PI; a.root.position.set(0, 0, 3.4); }
       else if (f.mode === 'throw') { pose = { mode: 'throwOH', t: f.anim, snap: true }; a.root.rotation.y = f.face; }
-      else if (f.mode === 'dive') { pose = { mode: 'layout' }; a.root.rotation.y = f.face; }
+      else if (f.mode === 'dive') { pose = { mode: 'dive', t: f.anim, snap: true }; a.root.rotation.y = f.face; }
       else if (f.mode === 'leap') { pose = { mode: 'wall', t: f.anim, snap: true }; a.root.rotation.y = f.face; }
       else {
         a.root.rotation.y = f.face;
@@ -131,10 +131,11 @@ class LiveGame {
       const a = this.actor(E.bat.pid, E.bat.hand === 'L' ? 'batL' : 'bat', bs);
       const L = E.bat.hand === 'L';
       a.root.position.set(L ? 2.9 : -2.9, 0, 0.1); a.root.rotation.y = L ? -Math.PI / 2 : Math.PI / 2;
-      let pose = { mode: 'stance', load: E.phase === 'windup' ? Math.min(1, E.pt / (E.windupDur || 1)) : 0 };
+      let pose = { mode: 'stance', load: E.phase === 'windup' ? Math.min(1, E.pt / (E.windupDur || 1)) : E.phase === 'pitch' ? 1 : 0 };
       const sw = E.bat.swing;
       if (sw && sw.started != null) {
-        const t = Math.min(1, (E.pt - sw.started) / SWING_TIME + (E.phase !== 'pitch' ? 1 : 0));
+        // the swing starts from the loaded position (anim 0.25) and reaches contact (0.5) SWING_TIME/2 after the press
+        const t = Math.min(1, 0.25 + 0.75 * ((E.pt - sw.started) / (SWING_TIME * 1.5)) + (E.phase !== 'pitch' ? 1 : 0));
         const c = E.curPitch.path.at(1), aim = sw.pci || E.pci;
         pose = { mode: sw.kind === 'bunt' ? 'bunt' : 'swing', t, snap: true, dy: (aim.y - 2.5) / FT, dz: 0 };
         if (sw.kind === 'bunt') pose.t = Math.min(1, (E.pt - sw.started) / 0.3);

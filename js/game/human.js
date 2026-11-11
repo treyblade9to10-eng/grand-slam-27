@@ -110,7 +110,7 @@ export async function loadHuman() {
 }
 
 // ---- skin tone textures: blend the light and dark painted skins, then tint ----
-const TONES = [[0, 1.04], [0.14, 1.0], [0.3, 0.98], [0.5, 0.97], [0.66, 0.95], [0.82, 0.92], [1, 0.88], [1, 0.74]];
+const TONES = [[0, 1.04], [0.14, 1.0], [0.3, 0.97], [0.5, 0.94], [0.7, 0.9], [0.9, 0.84], [1, 0.74], [1, 0.6]];
 function skinTex(idx) {
   idx = Math.max(0, Math.min(7, idx | 0));
   if (H.skinCache.has(idx)) return H.skinCache.get(idx);
@@ -132,14 +132,14 @@ function uniformMaterial(skinIdx, U, opt) {
     uUnder: { value: C(U.under || U.trim) }, uBelt: { value: C(U.belt || U.trim) }, uSock: { value: C(U.sock || U.trim) }, uStripe: { value: C(U.sockStripe || U.base) },
     uShoe: { value: C(U.shoe || '#1b1b1f') }, uGlove: { value: C(opt.gloveColor || U.trim) },
     uPin: { value: U.pin ? 1 : 0 }, uPipe: { value: U.piping ? 1 : 0 }, uSleeveEnd: { value: opt.sleeveEnd ?? 0.36 }, uUnderOn: { value: opt.under ? 1 : 0 }, uGloveOn: { value: opt.gloves ? 1 : 0 },
-    uPantsEnd: { value: opt.long ? 0.16 : 0.40 }, uBuild: { value: opt.build || 1 }, uMirror: { value: opt.mirror ? -1 : 1 }, uUmp: { value: opt.ump ? 1 : 0 },
+    uPantsEnd: { value: opt.long ? 0.16 : 0.40 }, uBuild: { value: opt.build || 1 }, uFaceA: { value: new THREE.Vector4(...(opt.face || [0, 0, 0, 0, 0, 0, 0, 0, 0]).slice(0, 4)) }, uFaceB: { value: new THREE.Vector4(...(opt.face || [0, 0, 0, 0, 0, 0, 0, 0, 0]).slice(4, 8)) }, uFaceC: { value: (opt.face || [])[8] || 0 }, uMirror: { value: opt.mirror ? -1 : 1 }, uUmp: { value: opt.ump ? 1 : 0 },
     uDecal: { value: opt.decal || null }, uDecalOn: { value: opt.decal ? 1 : 0 }, uPatch: { value: opt.patch || null }, uPatchOn: { value: opt.patch ? 1 : 0 },
   };
   m.userData.u = u;
   m.onBeforeCompile = (sh) => {
     Object.assign(sh.uniforms, u);
     sh.vertexShader = sh.vertexShader
-      .replace('#include <common>', '#include <common>\nvarying vec3 vB; varying vec3 vBN; uniform float uSleeveEnd; uniform float uPantsEnd; uniform float uBuild;')
+      .replace('#include <common>', '#include <common>\nvarying vec3 vB; varying vec3 vBN; uniform float uSleeveEnd; uniform float uPantsEnd; uniform float uBuild; uniform vec4 uFaceA; uniform vec4 uFaceB; uniform float uFaceC;')
       .replace('#include <begin_vertex>', `#include <begin_vertex>
         vB = position; vBN = normal;
         {
@@ -157,6 +157,31 @@ function uniformMaterial(skinIdx, U, opt) {
           // blouse the pants just above the sock line
           puff += pants * 0.012 * exp(-pow((y - uPantsEnd - 0.03) / 0.03, 2.0));
           vec3 p = transformed;
+          // ---- per-player face: jaw, chin, nose, brow, skull width, cheekbones, lips, face length ----
+          if (y > 1.545) {
+            float hw = smoothstep(1.545, 1.575, y);
+            float front = smoothstep(-0.02, 0.04, p.z);
+            vec2 eL = vec2(ax - 0.033, y - 1.699);
+            float eyeK = 1.0 - exp(-dot(eL, eL) / (0.021 * 0.021)); // keep the eye sockets where the eyeballs are
+            float jaw = hw * (1.0 - smoothstep(1.62, 1.68, y)) * front;
+            p.x *= 1.0 + 0.16 * uFaceA.x * jaw * eyeK;
+            float chin = hw * (1.0 - smoothstep(1.595, 1.625, y)) * smoothstep(0.02, 0.06, p.z) * (1.0 - smoothstep(0.03, 0.06, ax));
+            p.y -= 0.014 * uFaceA.y * chin; p.z += 0.008 * uFaceA.y * chin;
+            vec3 nb = vec3(0.0, 1.652, 0.088); vec3 dn = p - nb;
+            float nose = exp(-dot(dn, dn) / (0.026 * 0.026)) * step(0.075, p.z);
+            p.z += dn.z * 0.45 * uFaceA.z * nose; p.y += dn.y * 0.22 * uFaceA.z * nose;
+            p.x *= 1.0 + 0.36 * uFaceA.w * nose;
+            float brow = exp(-pow((y - 1.722) / 0.012, 2.0)) * smoothstep(0.06, 0.085, p.z) * (1.0 - smoothstep(0.05, 0.075, ax));
+            p.z += 0.004 * uFaceB.x * brow;
+            p.x *= 1.0 + 0.032 * uFaceB.y * hw;
+            vec3 ck = vec3(ax - 0.056, y - 1.664, p.z - 0.062);
+            float cheek = exp(-dot(ck, ck) / (0.024 * 0.024)) * eyeK;
+            p.x *= 1.0 + 0.1 * uFaceB.z * cheek; p.z += 0.004 * uFaceB.z * cheek;
+            vec3 lp = vec3(p.x, y - 1.616, p.z - 0.088);
+            p.z += 0.0045 * uFaceB.w * exp(-dot(lp, lp) / (0.017 * 0.017));
+            float lower = hw * front * (1.0 - smoothstep(1.66, 1.69, y)) * eyeK;
+            p.y = mix(p.y, 1.69 + (p.y - 1.69) * (1.0 + 0.065 * uFaceC), lower);
+          }
           // body build: heavier players are wider through the trunk and thighs
           float bw = (uBuild - 1.0) * (smoothstep(0.55, 0.85, y) * (1.0 - smoothstep(1.35, 1.5, y))) * (1.0 - smoothstep(0.2, 0.3, ax));
           p.x += p.x * bw * 0.9; p.z += (p.z + 0.02) * bw * 1.1 * smoothstep(0.95, 1.15, y);
@@ -222,7 +247,7 @@ function uniformMaterial(skinIdx, U, opt) {
       .replace('#include <roughnessmap_fragment>', '#include <roughnessmap_fragment>\nroughnessFactor = mix(roughnessFactor, 0.86, cloth);')
       .replace('#include <normal_fragment_maps>', '#include <normal_fragment_maps>\nnormal = normalize(mix(normal, nonPerturbedNormal, cloth * 0.85));');
   };
-  m.customProgramCacheKey = () => 'gsUniform2';
+  m.customProgramCacheKey = () => 'gsUniform3';
   return m;
 }
 
@@ -277,7 +302,7 @@ export function attachHuman(P, o) {
   const decal = o.team || o.U.key === 'ump' ? new THREE.CanvasTexture(decalCanvas(o.card, o.U, o.team, o.chestLogo)) : null;
   if (decal) { decal.flipY = false; decal.colorSpace = THREE.SRGBColorSpace; decal.anisotropy = 4; }
   const patch = o.patchCanvas ? new THREE.CanvasTexture(o.patchCanvas) : null; if (patch) patch.colorSpace = THREE.SRGBColorSpace;
-  body.material = uniformMaterial(o.skinIdx, o.U, { decal, patch, mirror: o.lefty, gloves: o.gloves, gloveColor: o.gloveColor, under: o.under, long: o.long, ump: o.U.key === 'ump', sleeveEnd: o.sleeveEnd, build: Math.max(0.92, Math.min(1.2, o.look.build || 1)) });
+  body.material = uniformMaterial(o.skinIdx, o.U, { decal, patch, mirror: o.lefty, gloves: o.gloves, gloveColor: o.gloveColor, under: o.under, long: o.long, ump: o.U.key === 'ump', sleeveEnd: o.sleeveEnd, build: Math.max(0.92, Math.min(1.2, o.look.build || 1)), face: faceParams(o.card && o.card.id) });
   eyes.material = new THREE.MeshStandardMaterial({ map: H.eyeT, roughness: 0.2 });
   const hairC = new THREE.Color(o.hairHex || '#2a1c14');
   brows.material = new THREE.MeshStandardMaterial({ color: hairC.clone().multiplyScalar(0.8), roughness: 0.9 });
@@ -405,4 +430,11 @@ function drapeJersey(mesh) {
     else if (z < c && zB[k] < c) P.setZ(i, c + (z - c) * (1 + ((c - tB[k]) / (c - zB[k]) - 1) * edge * side));
   }
   P.needsUpdate = true;
+}
+
+// nine face-shape knobs in -1..1, fixed per player (from his id) so he always looks the same
+function faceParams(id) {
+  let h = 2166136261; for (const ch of String(id ?? '')) { h ^= ch.charCodeAt(0); h = Math.imul(h, 16777619); }
+  const out = []; for (let i = 0; i < 9; i++) { h = Math.imul(h ^ (h >>> 15), 2246822507); h = Math.imul(h ^ (h >>> 13), 3266489909); h ^= h >>> 16; const u = (h >>> 0) / 4294967296; out.push((u * 2 - 1) * (0.5 + 0.5 * Math.abs(u * 2 - 1))); }
+  return out;
 }

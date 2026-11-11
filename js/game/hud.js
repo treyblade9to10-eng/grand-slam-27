@@ -74,7 +74,8 @@ export class HUD {
       line = `${p.th === 'L' ? 'LHP' : 'RHP'}  <b>${ln[2] ?? 0}-${ln[3] ?? 0}</b>  <b>${ln[4] != null ? (+ln[4]).toFixed(2) : '-.--'}</b> ERA  <b>${ln[6] ?? 0}</b> K`;
     }
     this.l3.style.setProperty('--tc', t.c1);
-    this.l3.innerHTML = `<div class="num">${p.num ?? ''}</div><div class="bx"><div class="nm">${esc(full(p))}</div><div class="ln">${line}</div></div>`;
+    const hs = /^\d+$/.test(String(p.id)) ? `<div class="hs"><img alt="" src="https://img.mlbstatic.com/mlb-photos/image/upload/d_people:generic:headshot:67:current.png/w_180,q_auto:best/v1/people/${p.id}/headshot/67/current" onerror="this.parentNode.remove()"></div>` : '';
+    this.l3.innerHTML = `${hs}<div class="num">${p.num ?? ''}</div><div class="bx"><div class="nm">${esc(full(p))}</div><div class="ln">${line}</div></div>`;
     this.l3.classList.add('on'); clearTimeout(this._l3); this._l3 = setTimeout(() => this.l3.classList.remove('on'), 4200);
   }
   banner(big, sm = '', cls = '', ms = 1800) {

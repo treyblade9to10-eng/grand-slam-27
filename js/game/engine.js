@@ -19,7 +19,7 @@ export const DIFF = {
   allstar: { win: 1.0, pci: 1.0, cpuCon: 1.05, cpuEye: 1.05, cpuCtl: 1.05, assist: 0.35, meter: 1.15 },
   legend: { win: 0.8, pci: 0.9, cpuCon: 1.15, cpuEye: 1.15, cpuCtl: 1.15, assist: 0.15, meter: 1.3 },
 };
-export const SWING_TIME = 0.3;
+export const SWING_TIME = 0.2; // press -> contact = SWING_TIME / 2 (the batter is already loaded when he starts)
 // expected batting average on a fair, non-homer ball by exit velocity / launch angle (Statcast-shaped)
 export function xBA(ev, la) {
   if (la < 10) { if (ev < 72) return 0.18; return clamp(0.12 + (ev - 82) * 0.01, 0.1, 0.45); }
@@ -846,7 +846,10 @@ export class Engine {
   // ---------- movement ----------
   moveActors(dt) {
     for (const f of Object.values(this.F)) {
-      if (f.mode === 'throw' || f.mode === 'dive' || f.mode === 'leap') { f.anim += dt * (f.mode === 'dive' ? 1.2 : f.mode === 'leap' ? 1.05 : 2.2); if (f.anim >= 1) { f.mode = 'ready'; f.anim = 0; } continue; }
+      if (f.mode === 'throw' || f.mode === 'dive' || f.mode === 'leap') {
+        // a dive carries the fielder forward through the air and into a short slide
+        if (f.mode === 'dive' && f.anim > 0.08 && f.anim < 0.62) { const sp = 15 * (1 - (f.anim - 0.08) / 0.54); f.p.x += Math.sin(f.face) * sp * dt; f.p.z += Math.cos(f.face) * sp * dt; }
+        f.anim += dt * (f.mode === 'dive' ? 1.0 : f.mode === 'leap' ? 1.05 : 2.2); if (f.anim >= 1) { f.mode = 'ready'; f.anim = 0; } continue; }
       const t = f.tgt;
       if (t) {
         const d = dist(f.p, t);

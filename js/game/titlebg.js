@@ -16,5 +16,5 @@ export function titleBg(el) {
   };
   requestAnimationFrame(loop);
   st.park.drawBoard({ title: 'MLB GRAND SLAM 27', sub: DB.park(id).name.toUpperCase() });
-  return { stop() { run = false; st.dispose(); } };
+  return { id, time, stop() { run = false; st.dispose(); } };
 }

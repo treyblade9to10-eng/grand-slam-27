@@ -1,6 +1,6 @@
 // MLB Grand Slam 27 - app shell: router, title, quick play setup, controls guide, settings
-import { h, $, $$, esc, toast, badge, menuNav, modal, tv, teamRatings, ratingBars, divisionGrid, navFocus } from './ui.js';
-import { Settings, saveSettings } from './store.js';
+import { h, $, $$, esc, toast, badge, menuNav, modal, tv, teamVars, teamRatings, ratingBars, divisionGrid, navFocus } from './ui.js';
+import { Settings, saveSettings, loadRaw, saveRaw, has } from './store.js';
 import * as DB from './db.js';
 import { preloadLogos } from './logos.js';
 import { goLandscape } from './orient.js';
@@ -16,6 +16,7 @@ export function render() {
   const v = Views[name] || Views.title;
   app.innerHTML = ''; app.scrollTop = 0;
   if (window.__titleBg && name !== 'title') { window.__titleBg.stop(); window.__titleBg = null; }
+  if (name === 'season' && parts[1] === 'hub' && +parts[2]) saveRaw('last_slot', +parts[2]); // title CONTINUE tile
   v(app, parts.slice(1));
 }
 window.addEventListener('hashchange', render);
@@ -28,23 +29,76 @@ export function topBar(title, back = '') {
 }
 
 // ---------------- title ----------------
+// Show-style main menu: wordmark top left, "tonight at" park chip top right (the flyover's park),
+// a row of mode tiles along the bottom (PLAY NOW is the big featured one). Line-art SVGs, no images.
+const ART = {
+  season: '<svg viewBox="0 0 120 120"><path d="M60 22 98 60 60 98 22 60Z"/><path d="M60 98 30 68M60 98 90 68" opacity=".5"/><rect x="55" y="17" width="10" height="10" transform="rotate(45 60 22)"/><rect x="93" y="55" width="10" height="10" transform="rotate(45 98 60)"/><rect x="17" y="55" width="10" height="10" transform="rotate(45 22 60)"/><circle cx="60" cy="62" r="5"/></svg>',
+  derby: '<svg viewBox="0 0 160 120"><path d="M14 112C40 30 104 4 150 34" stroke-dasharray="2 9"/><circle cx="150" cy="34" r="6"/><path d="M96 112V70h58" opacity=".5"/><path d="M96 82h58M96 94h58" opacity=".22"/></svg>',
+  controls: '<svg viewBox="0 0 120 80"><path d="M34 14h52c14 0 22 10 26 26l4 18c2 10-10 18-18 10L86 56H34L22 68C14 76 2 68 4 58l4-18C12 24 20 14 34 14Z"/><path d="M32 30v16M24 38h16"/><circle cx="84" cy="32" r="3.5"/><circle cx="94" cy="42" r="3.5"/><circle cx="74" cy="42" r="3.5"/><circle cx="84" cy="52" r="3.5"/></svg>',
+  settings: '<svg viewBox="0 0 120 80"><path d="M12 20h96M12 40h96M12 60h96" opacity=".45"/><rect x="66" y="13" width="10" height="14" rx="2"/><rect x="30" y="33" width="10" height="14" rx="2"/><rect x="84" y="53" width="10" height="14" rx="2"/></svg>',
+};
+const WHEN = { day: 'THIS AFTERNOON', dusk: 'THIS EVENING', night: 'TONIGHT' };
+// the season slot to offer on CONTINUE: the last one opened, else the first slot with a save
+function continueSlot() {
+  const last = loadRaw('last_slot', 0), ok = s => has('season_' + s);
+  return ok(last) ? last : [1, 2, 3].find(ok) || 0;
+}
 register('title', async (el) => {
   const bg = h('div', { class: 'bgc' });
-  const opts = [
-    ['play', 'PLAY NOW', 'Pick any two clubs and play a game in their real ballpark'],
-    ['season', 'SEASON', 'Run a club through 20 to 162 games, sim or play every game, chase October'],
-    ['derby', 'HOME RUN DERBY', 'Pick a slugger, 10 outs, see how many you can launch'],
-    ['controls', 'CONTROLS', 'Keyboard, controller and touch, all on one page'],
-    ['settings', 'SETTINGS', 'Difficulty, swing aim, pitch meter, graphics, sound'],
-  ];
-  el.append(h('div', { class: 'title' }, bg, h('div', { class: 'shade' }),
-    h('div', { class: 'in' },
-      h('div', { class: 'logo27' }, h('span', { class: 'mlb' }, 'MLB'), h('span', { class: 'gs' }, 'GRAND SLAM'), h('span', { class: 'n' }, '27')),
-      h('div', { class: 'muted', style: 'font-size:14px' }, `All 30 clubs, real rosters as of ${DB.DATA_DATE}, all 30 real ballparks.`),
-      h('div', { class: 'menu' }, opts.map(([k, t, s]) => h('button', { class: 'opt', onclick: () => go(k) }, h('div', {}, t, h('small', {}, s)))))),
-    h('div', { class: 'ver' }, VERSION)));
-  setTimeout(() => $('.menu .opt')?.classList.add('focus'), 50);
-  try { const m = await import('./game/titlebg.js'); if (document.contains(bg)) window.__titleBg = m.titleBg(bg); } catch (e) { console.warn(e); }
+  const live = h('div', { class: 'tm-live' });
+  const A = DB.team(QP.away), H = DB.team(QP.home);
+  const tx = (k, t, s) => h('div', { class: 'tm-tx' }, h('div', { class: 'tm-k' }, k), h('div', { class: 't' }, t), s != null ? h('div', { class: 'tm-s' }, s) : null);
+  const art = k => h('div', { class: 'tm-art', html: ART[k] });
+  let i = 0;
+  const tile = (k, cls, ...kids) => {
+    const b = h('button', { class: 'tm-tile nv ' + cls, 'data-k': k, style: `--i:${i++}`, onclick: () => go(b.dataset.go || k) }, ...kids, h('i', { class: 'bar' }));
+    b.addEventListener('pointerenter', e => { if (e.pointerType === 'mouse') navFocus(b, true); });
+    return b;
+  };
+  // PLAY NOW: the current quick-play matchup on two club-colored panels
+  const play = tile('play', 'feat',
+    h('div', { class: 'tm-mu' },
+      h('div', { class: 'p a', ...tv(A) }, h('div', { class: 'lg' }, badge(A, 92))),
+      h('div', { class: 'p h', ...tv(H) }, h('div', { class: 'lg' }, badge(H, 92))),
+      h('b', { class: 'vs' }, 'VS')),
+    tx('QUICK GAME', 'PLAY NOW', `${A.name} at ${H.name}  ·  ${DB.park(QP.park || QP.home).name}`));
+  // SEASON: CONTINUE with the club, record and progress when a save exists
+  const slot = continueSlot();
+  const season = slot
+    ? tile('season', 'season has', h('div', { class: 'tm-wm' }), tx('CONTINUE', 'SEASON', ''))
+    : tile('season', 'season', art('season'), tx('FRANCHISE', 'SEASON', '20 to 162 games, then October'));
+  const best = Object.values(loadRaw('derby_best', {}) || {}).reduce((m, b) => b && b.hr > (m?.hr ?? -1) ? b : m, null);
+  const derby = tile('derby', 'derby', art('derby'),
+    tx('10 OUTS', 'HOME RUN DERBY', best ? `Best: ${best.hr} HR  ·  ${best.long} ft` : 'Launch as many as you can'));
+  const small = h('div', { class: 'tm-small' },
+    tile('controls', 'mini', art('controls'), tx('HOW TO PLAY', 'CONTROLS')),
+    tile('settings', 'mini', art('settings'), tx('OPTIONS', 'SETTINGS')));
+  el.append(h('div', { class: 'title tm' }, bg, h('div', { class: 'shade' }),
+    h('div', { class: 'tm-top' },
+      h('h1', { class: 'tm-logo', 'aria-label': 'MLB Grand Slam 27' }, h('span', { class: 'mlb' }, 'MLB'), h('span', { class: 'gs' }, 'GRAND SLAM'), h('span', { class: 'n' }, '27')),
+      live),
+    h('div', { class: 'tm-tiles' }, play, season, derby, small),
+    h('div', { class: 'tm-foot' },
+      h('span', {}, h('span', { class: 'x' }, 'ALL 30 CLUBS  ·  '), `REAL ROSTERS AS OF ${DB.DATA_DATE}`, h('span', { class: 'x' }, '  ·  ALL 30 BALLPARKS')),
+      h('span', { class: 'v' }, VERSION))));
+  setTimeout(() => navFocus(play, true), 40);
+  if (slot) import('./season/season.js').then(async SE => {
+    const { standings } = await import('./season/stats.js');
+    const S = SE.loadSeason(slot); if (!S || !document.contains(season)) return;
+    const t = DB.team(S.team), st = standings(S).find(s => s.id === S.team) || { w: 0, l: 0, g: 0 };
+    const status = S.champ ? (S.champ === S.team ? 'WORLD SERIES CHAMPS' : 'SEASON COMPLETE') : S.post ? 'POSTSEASON' : `GAME ${Math.min(S.len, st.g + 1)} OF ${S.len}`;
+    season.setAttribute('style', season.getAttribute('style') + ';' + teamVars(t)); season.dataset.tv = t.id;
+    season.querySelector('.tm-wm').append(badge(t, 220));
+    season.querySelector('.tm-s').replaceChildren(h('span', { class: 'lg' }, badge(t, 34)), h('span', { class: 'rec' }, `${st.w}-${st.l}`), h('span', {}, status));
+    season.dataset.go = `season/hub/${slot}/home`;
+  }).catch(e => console.warn(e));
+  try {
+    const m = await import('./game/titlebg.js');
+    if (!document.contains(bg)) return;
+    const tb = window.__titleBg = m.titleBg(bg);
+    if (tb.id) live.append(h('span', { class: 'k' }, WHEN[tb.time] || 'TONIGHT'), h('span', { class: 'pk' }, DB.park(tb.id).name), badge(DB.team(tb.id), 26));
+    live.classList.add('on');
+  } catch (e) { console.warn(e); }
 });
 
 // ---------------- quick play setup ----------------

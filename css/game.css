@@ -46,6 +46,7 @@
 /* lower third */
 .l3{position:absolute;left:12px;bottom:max(14px,env(safe-area-inset-bottom));display:flex;align-items:stretch;transform:translateX(-120%);transition:transform .35s cubic-bezier(.2,.8,.2,1);max-width:min(560px,70vw)}
 .l3.on{transform:none}
+.l3 .hs{width:64px;background:linear-gradient(180deg,#2a3242,#141a24);overflow:hidden;display:flex;align-items:flex-end}.l3 .hs img{width:100%;display:block}
 .l3 .num{background:var(--tc,#c00);font:900 italic 34px 'Barlow Condensed';padding:4px 12px;display:flex;align-items:center;min-width:62px;justify-content:center}
 .l3 .bx{background:rgba(8,11,17,.92);padding:6px 14px}
 .l3 .nm{font:900 italic 26px 'Barlow Condensed';letter-spacing:.4px;line-height:1;text-transform:uppercase}

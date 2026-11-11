@@ -950,6 +950,16 @@ export function animate(P, pose, dt) {
       spineX: mix(-0.12, 0.3, crouch), headX: mix(-0.55, -0.2, crouch), shLx: mix(-1.0, -3.05, up), shLz: 0.12, elL: -0.08, shRx: mix(-0.6, -2.7, up), shRz: -0.22, elR: -0.25, chestY: 0, pelvisY: 0,
       bodyY: 0.98 + 0.62 * up - 0.18 * crouch });
   }
+  if (m === 'dive') { // push off, full layout through the air, land on the chest and slide, pop back up
+    const t = pose.t || 0, push = sstep(0, 0.14, t), air = sstep(0.1, 0.32, t), land = sstep(0.42, 0.56, t), up = sstep(0.68, 0.95, t);
+    const lay = air * (1 - up);
+    Object.assign(T, {
+      pelvisX: mix(mix(0.35 * push, 1.42, air), 0.55, up), bodyY: mix(mix(0.95 - 0.25 * push, 0.72, air), 0.3, land * (1 - up)) * (1 - up) + up * 0.62,
+      hipLx: mix(mix(-0.7 * push, 0.25, air), -1.5, up), hipRx: mix(mix(-0.2 * push, 0.05, air), -0.4, up), knL: mix(mix(0.9 * push, 0.35, air), 1.9, up), knR: mix(mix(0.5 * push, 0.15, air), 1.6, up),
+      shLx: mix(-1.4 * push, -3.05, lay) + up * -0.5, shRx: mix(-1.0 * push, -2.85, lay) * (1 - up) + up * -0.9, shLz: 0.12, shRz: -0.16, elL: -0.06, elR: mix(-0.3, -0.15, lay),
+      spineX: mix(0.35 * push, -0.08, air) * (1 - up) + up * 0.3, headX: mix(-0.3, -0.95, lay), chestY: 0, pelvisY: 0, hipLz: 0.08, hipRz: -0.08,
+    });
+  }
   if (m === 'layout') Object.assign(T, { pelvisX: 1.38, bodyY: 0.4, hipLx: 0.3, hipRx: 0.1, knL: 0.7, knR: 0.25, shLx: -3.0, shRx: -3.0, shLz: 0.14, shRz: -0.14, elL: -0.05, elR: -0.05, spineX: -0.1, headX: -0.95, chestY: 0, pelvisY: 0 });
   if (m === 'down') Object.assign(T, { pelvisX: 1.5, bodyY: 0.15, hipLx: 0.1, hipRx: 0.05, knL: 0.35, knR: 0.15, shLx: -2.8, shRx: -2.6, shLz: 0.3, shRz: -0.2, elL: -0.3, elR: -0.2, spineX: 0, headX: -0.7, chestY: 0, pelvisY: 0 });
   if (m === 'cheer') {
